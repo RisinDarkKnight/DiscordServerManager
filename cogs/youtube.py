@@ -1,122 +1,167 @@
-# cogs/youtube.py
-import discord, os, aiohttp, json
+# youtube.py
+import discord, os, aiohttp, json, re
 from discord.ext import commands, tasks
 from discord import app_commands
-from discord.ui import View
-from dotenv import load_dotenv
 
-load_dotenv()
-YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY")
-CONFIG_FILE = "server_config.json"
-
-# Poll interval locked to 3 minutes (180 seconds)
-YOUTUBE_POLL_INTERVAL = 180
-
-def ensure_config():
-    if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f, indent=4)
-
-def load_config():
-    ensure_config()
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_config(d):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(d, f, indent=4)
+CONFIG_PATH = "server_config.json"
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+YOUTUBE_POLL_SECONDS = 300  # 5 minutes
 
 class YouTubeCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.last_video_cache = {}  # channel_id -> last_video_id
         self.check_uploads.start()
 
     def cog_unload(self):
         self.check_uploads.cancel()
 
-    async def fetch_latest(self, channel_id):
+    async def resolve_channel_id(self, raw: str):
+        raw = raw.strip()
+        # If already a channel ID
+        if re.match(r"^UC[a-zA-Z0-9_-]{20,}$", raw):
+            return raw
+        # Parse URL forms
+        # channel URL: /channel/UC...
+        m = re.search(r"youtube\.com\/channel\/([A-Za-z0-9_-]+)", raw)
+        if m:
+            return m.group(1)
+        # user URL: /user/NAME -> use channels?forUsername
+        m = re.search(r"youtube\.com\/user\/([A-Za-z0-9_-]+)", raw)
+        if m:
+            username = m.group(1)
+            # call channels?forUsername
+            url = "https://www.googleapis.com/youtube/v3/channels"
+            params = {"part":"id","forUsername":username,"key":YOUTUBE_API_KEY}
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, params=params) as r:
+                    if r.status != 200:
+                        return None
+                    data = await r.json()
+                    items = data.get("items", [])
+                    if items:
+                        return items[0]["id"]
+        # handle /@handle or raw @handle or https://www.youtube.com/@handle
+        m = re.search(r"(?:@|youtube\.com\/@)([A-Za-z0-9_\-]+)", raw)
+        if m:
+            handle = m.group(1)
+            # Use search endpoint type=channel q=handle
+            url = "https://www.googleapis.com/youtube/v3/search"
+            params = {"part":"snippet","q":f"@{handle}","type":"channel","maxResults":1,"key":YOUTUBE_API_KEY}
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url, params=params) as r:
+                    if r.status != 200:
+                        return None
+                    data = await r.json()
+                    items = data.get("items", [])
+                    if items:
+                        return items[0]["snippet"]["channelId"]
+        # fallback: try search by raw string
         url = "https://www.googleapis.com/youtube/v3/search"
-        params = {"key": YOUTUBE_KEY, "channelId": channel_id, "part": "snippet,id", "order": "date", "maxResults": 1}
+        params = {"part":"snippet","q":raw,"type":"channel","maxResults":1,"key":YOUTUBE_API_KEY}
         async with aiohttp.ClientSession() as s:
             async with s.get(url, params=params) as r:
-                return await r.json()
+                if r.status != 200:
+                    return None
+                data = await r.json()
+                items = data.get("items", [])
+                if items:
+                    return items[0]["snippet"]["channelId"]
+        return None
 
-    @tasks.loop(seconds=YOUTUBE_POLL_INTERVAL)
+    async def fetch_latest_video(self, channel_id: str):
+        url = "https://www.googleapis.com/youtube/v3/search"
+        params = {"part":"snippet","channelId":channel_id,"order":"date","maxResults":1,"type":"video","key":YOUTUBE_API_KEY}
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, params=params) as r:
+                if r.status != 200:
+                    return None
+                data = await r.json()
+                items = data.get("items", [])
+                if not items:
+                    return None
+                vid = items[0]
+                vid_id = vid["id"]["videoId"]
+                return {"id": vid_id, "title": vid["snippet"]["title"], "thumb": vid["snippet"]["thumbnails"].get("high",{}).get("url"), "channelTitle": vid["snippet"]["channelTitle"], "url": f"https://www.youtube.com/watch?v={vid_id}"}
+
+    @tasks.loop(seconds=YOUTUBE_POLL_SECONDS)
     async def check_uploads(self):
         await self.bot.wait_until_ready()
-        cfg = load_config()
+        cfg = self.bot.config
         changed = False
         for gid, gconf in cfg.items():
             guild = self.bot.get_guild(int(gid))
             if not guild:
                 continue
-            yt_channel_id = gconf.get("youtube_notif_channel")
-            notif_channel = guild.get_channel(yt_channel_id) if yt_channel_id else None
-            youtuber_role_id = gconf.get("youtuber_role_id")
-            mention_role = guild.get_role(youtuber_role_id) if youtuber_role_id else None
-
-            for entry in gconf.get("youtube_channels", []):
-                cid = entry.get("channel_id")
-                if not cid:
+            list_ = gconf.get("youtube_channels", [])
+            chan_id = gconf.get("youtube_notif_channel")
+            role_id = gconf.get("youtuber_role_id")
+            notif_channel = guild.get_channel(chan_id) if chan_id else None
+            mention_role = guild.get_role(role_id) if role_id else None
+            for entry in list_:
+                channel_id = entry.get("channel_id")
+                if not channel_id:
                     continue
                 try:
-                    res = await self.fetch_latest(cid)
-                    items = res.get("items", [])
-                    if not items:
+                    latest = await self.fetch_latest_video(channel_id)
+                    if not latest:
                         continue
-                    vid = items[0]
-                    vid_id = vid["id"].get("videoId")
-                    if not vid_id:
+                    if entry.get("last_video") == latest["id"]:
                         continue
-                    if entry.get("last_video") != vid_id:
-                        entry["last_video"] = vid_id
-                        changed = True
-                        if notif_channel:
-                            title = vid["snippet"]["title"]
-                            channel_title = vid["snippet"]["channelTitle"]
-                            thumb = vid["snippet"]["thumbnails"]["high"]["url"]
-                            url = f"https://www.youtube.com/watch?v={vid_id}"
-                            embed = discord.Embed(title=f"New upload from {channel_title}", description=title, url=url, color=discord.Color.red())
-                            embed.set_thumbnail(url=thumb)
-                            content = mention_role.mention if mention_role else ""
-                            try:
-                                await notif_channel.send(content=content, embed=embed)
-                            except discord.Forbidden:
-                                pass
+                    # send notify
+                    if notif_channel:
+                        embed = discord.Embed(title=latest["title"], url=latest["url"], description=f"New upload from {latest['channelTitle']}", color=discord.Color.red())
+                        if latest.get("thumb"):
+                            embed.set_image(url=latest["thumb"])
+                        content = mention_role.mention if mention_role else None
+                        try:
+                            await notif_channel.send(content=content, embed=embed)
+                        except discord.Forbidden:
+                            pass
+                    entry["last_video"] = latest["id"]
+                    changed = True
                 except Exception as e:
-                    print("YouTube poll error:", e)
+                    print("YT poll error:", e)
         if changed:
-            save_config(cfg)
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=4)
 
-    @app_commands.command(name="addyoutube", description="Add a YouTube channel ID to track (Admin only)")
+    @check_uploads.before_loop
+    async def before_check(self):
+        await self.bot.wait_until_ready()
+
+    # Commands
+    @app_commands.command(name="addyoutuber", description="Add a YouTube channel (URL/handle/channelId) to track (admin only)")
     @app_commands.checks.has_permissions(administrator=True)
-    async def addyoutube(self, interaction: discord.Interaction, channel_id: str):
-        channel_id = channel_id.strip()
-        cfg = load_config()
-        gid = str(interaction.guild.id)
-        cfg.setdefault(gid, {})
-        cfg[gid].setdefault("youtube_channels", [])
-        if any(e.get("channel_id") == channel_id for e in cfg[gid]["youtube_channels"]):
-            return await interaction.response.send_message("That YouTube channel is already tracked.", ephemeral=True)
-        cfg[gid]["youtube_channels"].append({"channel_id": channel_id, "last_video": None})
-        save_config(cfg)
+    async def addyoutuber(self, interaction: discord.Interaction, raw: str):
+        gid = str(interaction.guild_id)
+        self.bot.config.setdefault(gid, {})
+        self.bot.config[gid].setdefault("youtube_channels", [])
+        channel_id = await self.resolve_channel_id(raw)
+        if not channel_id:
+            return await interaction.response.send_message("❌ Could not resolve channel ID from input.", ephemeral=True)
+        if any(e.get("channel_id") == channel_id for e in self.bot.config[gid]["youtube_channels"]):
+            return await interaction.response.send_message("That channel is already tracked.", ephemeral=True)
+        self.bot.config[gid]["youtube_channels"].append({"channel_id": channel_id, "last_video": None})
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(self.bot.config, f, indent=4)
         await interaction.response.send_message(f"✅ Now tracking YouTube channel `{channel_id}`", ephemeral=True)
 
-    @app_commands.command(name="removeyoutube", description="Remove a tracked YouTube channel (Admin only)")
+    @app_commands.command(name="removeyoutuber", description="Remove a tracked YouTube channel (admin only)")
     @app_commands.checks.has_permissions(administrator=True)
-    async def removeyoutube(self, interaction: discord.Interaction):
-        cfg = load_config()
-        gid = str(interaction.guild.id)
-        list_ = cfg.get(gid, {}).get("youtube_channels", [])
+    async def removeyoutuber(self, interaction: discord.Interaction):
+        gid = str(interaction.guild_id)
+        list_ = self.bot.config.get(gid, {}).get("youtube_channels", [])
         if not list_:
             return await interaction.response.send_message("No YouTube channels tracked.", ephemeral=True)
         options = [discord.SelectOption(label=e["channel_id"], value=e["channel_id"]) for e in list_[:25]]
-        class RemoveView(View):
+        class RemoveView(discord.ui.View):
             @discord.ui.select(placeholder="Select YouTube channel to remove", options=options, min_values=1, max_values=1)
-            async def select_callback(self, select_interaction: discord.Interaction, select):
+            async def select_callback(inner_self, select_interaction: discord.Interaction, select):
                 chosen = select.values[0]
-                cfg[gid]["youtube_channels"] = [e for e in list_ if e["channel_id"] != chosen]
-                save_config(cfg)
+                self.bot.config[gid]["youtube_channels"] = [e for e in list_ if e["channel_id"] != chosen]
+                with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                    json.dump(self.bot.config, f, indent=4)
                 await select_interaction.response.edit_message(content=f"✅ Removed `{chosen}`", view=None)
         await interaction.response.send_message("Choose a YouTube channel to remove:", view=RemoveView(), ephemeral=True)
 
