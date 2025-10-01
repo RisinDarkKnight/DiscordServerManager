@@ -82,7 +82,7 @@ class Tickets(commands.Cog):
         if not panel_channel:
             return await interaction.response.send_message("Panel channel not found.", ephemeral=True)
 
-        embed = discord.Embed(title="Support Tickets", description="Click the button to open a private ticket.", color=discord.Color.green())
+        embed = discord.Embed(title="Support Tickets", description="Any report complaints or suggestions? Please use this system to report issues, rule violations, suggestions or other concerns to our moderation team. Your report will be reviewed as soon as possible.", color=discord.Color.green())
         button = Button(label="🎫 Open Ticket", style=discord.ButtonStyle.primary, custom_id="open_ticket")
 
         class PanelView(View):
