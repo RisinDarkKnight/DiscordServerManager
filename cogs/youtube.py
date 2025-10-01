@@ -7,20 +7,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY")
-DATA_FILE = "data.json"
+CONFIG_FILE = "server_config.json"
 
-def ensure_data():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
+# Poll interval locked to 3 minutes (180 seconds)
+YOUTUBE_POLL_INTERVAL = 180
+
+def ensure_config():
+    if not os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, indent=4)
 
-def load_data():
-    ensure_data()
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
+def load_config():
+    ensure_config()
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_data(d):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+def save_config(d):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(d, f, indent=4)
 
 class YouTubeCog(commands.Cog):
@@ -38,21 +41,24 @@ class YouTubeCog(commands.Cog):
             async with s.get(url, params=params) as r:
                 return await r.json()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(seconds=YOUTUBE_POLL_INTERVAL)
     async def check_uploads(self):
         await self.bot.wait_until_ready()
-        data = load_data()
+        cfg = load_config()
         changed = False
-        for gid, gconf in data.items():
+        for gid, gconf in cfg.items():
             guild = self.bot.get_guild(int(gid))
             if not guild:
                 continue
-            notif_id = gconf.get("notif_channel")
-            notif_channel = guild.get_channel(notif_id) if notif_id else None
-            yrole_id = gconf.get("youtuber_role")
-            mention_role = guild.get_role(yrole_id) if yrole_id else None
+            yt_channel_id = gconf.get("youtube_notif_channel")
+            notif_channel = guild.get_channel(yt_channel_id) if yt_channel_id else None
+            youtuber_role_id = gconf.get("youtuber_role_id")
+            mention_role = guild.get_role(youtuber_role_id) if youtuber_role_id else None
+
             for entry in gconf.get("youtube_channels", []):
                 cid = entry.get("channel_id")
+                if not cid:
+                    continue
                 try:
                     res = await self.fetch_latest(cid)
                     items = res.get("items", [])
@@ -72,45 +78,46 @@ class YouTubeCog(commands.Cog):
                             url = f"https://www.youtube.com/watch?v={vid_id}"
                             embed = discord.Embed(title=f"New upload from {channel_title}", description=title, url=url, color=discord.Color.red())
                             embed.set_thumbnail(url=thumb)
-                            mention = mention_role.mention if mention_role else ""
+                            content = mention_role.mention if mention_role else ""
                             try:
-                                await notif_channel.send(content=mention, embed=embed)
+                                await notif_channel.send(content=content, embed=embed)
                             except discord.Forbidden:
                                 pass
                 except Exception as e:
-                    print("YT check error:", e)
+                    print("YouTube poll error:", e)
         if changed:
-            save_data(data)
+            save_config(cfg)
 
-    @app_commands.command(name="addyoutube", description="Track a YouTube channel for new uploads (Admin only)")
+    @app_commands.command(name="addyoutube", description="Add a YouTube channel ID to track (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addyoutube(self, interaction: discord.Interaction, channel_id: str):
-        data = load_data()
+        channel_id = channel_id.strip()
+        cfg = load_config()
         gid = str(interaction.guild.id)
-        data.setdefault(gid, {})
-        data[gid].setdefault("youtube_channels", [])
-        if any(e["channel_id"] == channel_id for e in data[gid]["youtube_channels"]):
+        cfg.setdefault(gid, {})
+        cfg[gid].setdefault("youtube_channels", [])
+        if any(e.get("channel_id") == channel_id for e in cfg[gid]["youtube_channels"]):
             return await interaction.response.send_message("That YouTube channel is already tracked.", ephemeral=True)
-        data[gid]["youtube_channels"].append({"channel_id": channel_id, "last_video": None})
-        save_data(data)
+        cfg[gid]["youtube_channels"].append({"channel_id": channel_id, "last_video": None})
+        save_config(cfg)
         await interaction.response.send_message(f"✅ Now tracking YouTube channel `{channel_id}`", ephemeral=True)
 
     @app_commands.command(name="removeyoutube", description="Remove a tracked YouTube channel (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
     async def removeyoutube(self, interaction: discord.Interaction):
-        data = load_data()
+        cfg = load_config()
         gid = str(interaction.guild.id)
-        channels = data.get(gid, {}).get("youtube_channels", [])
-        if not channels:
+        list_ = cfg.get(gid, {}).get("youtube_channels", [])
+        if not list_:
             return await interaction.response.send_message("No YouTube channels tracked.", ephemeral=True)
-        options = [discord.SelectOption(label=c["channel_id"], value=c["channel_id"]) for c in channels[:25]]
+        options = [discord.SelectOption(label=e["channel_id"], value=e["channel_id"]) for e in list_[:25]]
         class RemoveView(View):
             @discord.ui.select(placeholder="Select YouTube channel to remove", options=options, min_values=1, max_values=1)
             async def select_callback(self, select_interaction: discord.Interaction, select):
                 chosen = select.values[0]
-                data[gid]["youtube_channels"] = [c for c in channels if c["channel_id"] != chosen]
-                save_data(data)
-                await select_interaction.response.edit_message(content=f"✅ Removed YouTube channel `{chosen}`", view=None)
+                cfg[gid]["youtube_channels"] = [e for e in list_ if e["channel_id"] != chosen]
+                save_config(cfg)
+                await select_interaction.response.edit_message(content=f"✅ Removed `{chosen}`", view=None)
         await interaction.response.send_message("Choose a YouTube channel to remove:", view=RemoveView(), ephemeral=True)
 
 async def setup(bot):

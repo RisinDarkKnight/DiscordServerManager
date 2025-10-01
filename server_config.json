@@ -1,0 +1,30 @@
+{
+    "1353181677555548210": {
+        "twitch_streamers": [
+            {
+                "twitch_name": "risindarkknight",
+                "notified": false
+            },
+            {
+                "twitch_name": "jaxydl",
+                "notified": false
+            },
+            {
+                "twitch_name": "b3an_dl",
+                "notified": false
+            }
+        ],
+        "ticket_panel_channel": 1422849491467370567,
+        "twitch_notif_channel": 1405421508964257832,
+        "youtube_notif_channel": 1422854684535947336,
+        "youtube_channels": [
+            {
+                "channel_id": "UCmj7DMASaEAg8QqD5YU3w0A",
+                "last_video": "E_-khgN8HWk"
+            }
+        ],
+        "ticket_roles": [
+            1422314741619097700
+        ]
+    }
+}

@@ -7,6 +7,9 @@ from discord.ext import commands
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+if not TOKEN:
+    raise RuntimeError("DISCORD_TOKEN missing in .env")
+
 intents = discord.Intents.default()
 intents.members = True
 intents.presences = True
@@ -14,21 +17,21 @@ intents.guilds = True
 intents.message_content = False
 
 bot = commands.Bot(command_prefix="/", intents=intents)
-DATA_FILE = "data.json"
+CONFIG_FILE = "server_config.json"
 
-def ensure_data():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
+def ensure_config():
+    if not os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f, indent=4)
 
-def load_data():
-    ensure_data()
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
+def load_config():
+    ensure_config()
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+def save_config(d):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=4)
 
 @bot.event
 async def on_ready():
@@ -39,7 +42,7 @@ async def on_ready():
     except Exception as e:
         print("❌ Failed to sync commands:", e)
 
-# Automatic 'Streaming' role assignment using Discord presence
+# Automatic "Streaming" role assignment from Discord presence
 @bot.event
 async def on_presence_update(before: discord.Member, after: discord.Member):
     if not after.guild:
@@ -71,7 +74,7 @@ async def load_cogs():
             await bot.load_extension(cog)
             print(f"Loaded cog: {cog}")
         except Exception as e:
-            print(f"Failed to load {cog}: {e}")
+            print(f"Failed loading {cog}: {e}")
 
 async def main():
     async with bot:
@@ -79,6 +82,4 @@ async def main():
         await bot.start(TOKEN)
 
 if __name__ == "__main__":
-    if not TOKEN:
-        raise RuntimeError("DISCORD_TOKEN not found in .env")
     asyncio.run(main())
