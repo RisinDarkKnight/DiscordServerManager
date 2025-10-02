@@ -1,4 +1,4 @@
-# bot.py (fixed)
+# bot.py (guild sync testing)
 import os, json, asyncio
 from dotenv import load_dotenv
 import discord
@@ -8,6 +8,10 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN missing in .env")
+
+# ⚡ set your main server (guild) ID here for instant slash command sync
+GUILD_ID = 1353181677555548210  # replace with your real server ID
+DEV_GUILD = discord.Object(id=GUILD_ID)
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -55,30 +59,29 @@ class ServerManagerBot(commands.Bot):
         self._save_json(self.TICKETS_PATH, self.tickets)
 
     async def setup_hook(self):
-        # 1) Silent purge old global commands (clear local tree then sync an empty set to Discord)
+        # purge old guild commands silently
         try:
-            self.tree.clear_commands(guild=None)
-            await self.tree.sync()  # this removes old commands on Discord
+            self.tree.clear_commands(guild=DEV_GUILD)
+            await self.tree.sync(guild=DEV_GUILD)
         except Exception:
-            # ignore any errors here so startup isn't blocked
             pass
 
-        # 2) Load cogs (awaited)
+        # load cogs
         for ext in self.cogs_to_load:
             try:
                 await self.load_extension(ext)
+                print(f"Loaded cog: {ext}")
             except Exception as e:
                 print(f"Failed loading {ext}: {e}")
 
-        # 3) Sync the newly-registered commands globally
+        # sync instantly to dev guild
         try:
-            await self.tree.sync()
-            print("📡 Commands synced")
+            await self.tree.sync(guild=DEV_GUILD)
+            print(f"📡 Commands synced to guild {GUILD_ID}")
         except Exception as e:
             print(f"Command sync failed: {e}")
 
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Auto-assign/remove "Streaming" role
         if after.guild is None:
             return
         was_streaming = any(a.type == discord.ActivityType.streaming for a in (before.activities or []))
