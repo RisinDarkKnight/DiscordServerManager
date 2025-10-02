@@ -1,4 +1,4 @@
-# bot.py
+# bot.py (fixed)
 import os, json, asyncio
 from dotenv import load_dotenv
 import discord
@@ -28,7 +28,6 @@ class ServerManagerBot(commands.Bot):
         self.DATA_PATH = "data.json"
         self.TICKETS_PATH = "tickets.json"
         self._ensure_files()
-        # in-memory caches
         self.config = self._load_json(self.CONFIG_PATH)
         self.data = self._load_json(self.DATA_PATH)
         self.tickets = self._load_json(self.TICKETS_PATH)
@@ -56,19 +55,30 @@ class ServerManagerBot(commands.Bot):
         self._save_json(self.TICKETS_PATH, self.tickets)
 
     async def setup_hook(self):
-        # load cogs (awaited)
+        # 1) Silent purge old global commands (clear local tree then sync an empty set to Discord)
+        try:
+            self.tree.clear_commands(guild=None)
+            await self.tree.sync()  # this removes old commands on Discord
+        except Exception:
+            # ignore any errors here so startup isn't blocked
+            pass
+
+        # 2) Load cogs (awaited)
         for ext in self.cogs_to_load:
             try:
                 await self.load_extension(ext)
             except Exception as e:
                 print(f"Failed loading {ext}: {e}")
 
-        # silently purge local tree then sync globally
-        self.tree.clear_commands(guild=None)
-        await self.tree.sync()  # global sync; Discord may take time to propagate
+        # 3) Sync the newly-registered commands globally
+        try:
+            await self.tree.sync()
+            print("📡 Commands synced")
+        except Exception as e:
+            print(f"Command sync failed: {e}")
 
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Streaming role auto-assign/remove
+        # Auto-assign/remove "Streaming" role
         if after.guild is None:
             return
         was_streaming = any(a.type == discord.ActivityType.streaming for a in (before.activities or []))
@@ -95,7 +105,6 @@ bot = ServerManagerBot()
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID {bot.user.id})")
-    # note: commands synced silently in setup_hook
 
 if __name__ == "__main__":
     asyncio.run(bot.start(TOKEN))
