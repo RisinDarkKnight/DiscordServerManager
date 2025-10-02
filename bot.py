@@ -5,29 +5,30 @@ import discord
 from discord.ext import commands
 
 load_dotenv()
-
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN missing in .env")
 
-# Intents (presence is needed for streaming-role feature)
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.presences = True
-intents.message_content = False  # not required, we use slash commands
+intents.message_content = False
 
 class ServerManagerBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="/", intents=intents)
-        # cogs to load (in cogs/ package)
-        self.cog_list = ["cogs.commands", "cogs.twitch", "cogs.youtube", "cogs.tickets"]
-        # files
+        self.cogs_to_load = [
+            "cogs.commands",
+            "cogs.twitch",
+            "cogs.youtube",
+            "cogs.tickets",
+        ]
         self.CONFIG_PATH = "server_config.json"
         self.DATA_PATH = "data.json"
         self.TICKETS_PATH = "tickets.json"
         self._ensure_files()
-        # load into memory
+        # in-memory caches
         self.config = self._load_json(self.CONFIG_PATH)
         self.data = self._load_json(self.DATA_PATH)
         self.tickets = self._load_json(self.TICKETS_PATH)
@@ -55,25 +56,21 @@ class ServerManagerBot(commands.Bot):
         self._save_json(self.TICKETS_PATH, self.tickets)
 
     async def setup_hook(self):
-        # await load_extension properly
-        for ext in self.cog_list:
+        # load cogs (awaited)
+        for ext in self.cogs_to_load:
             try:
                 await self.load_extension(ext)
-                print(f"✅ Loaded {ext}")
             except Exception as e:
-                print(f"❌ Failed loading {ext}: {e}")
-        # sync application commands:
-        try:
-            await self.tree.sync()
-            print("📡 Commands synced")
-        except Exception as e:
-            print(f"❌ Command sync failed: {e}")
+                print(f"Failed loading {ext}: {e}")
+
+        # silently purge local tree then sync globally
+        self.tree.clear_commands(guild=None)
+        await self.tree.sync()  # global sync; Discord may take time to propagate
 
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        """Auto-assign/remove 'Streaming' role when user starts/stops streaming."""
+        # Streaming role auto-assign/remove
         if after.guild is None:
             return
-        # detect streaming activity
         was_streaming = any(a.type == discord.ActivityType.streaming for a in (before.activities or []))
         is_streaming = any(a.type == discord.ActivityType.streaming for a in (after.activities or []))
         if was_streaming == is_streaming:
@@ -86,12 +83,10 @@ class ServerManagerBot(commands.Bot):
             except discord.Forbidden:
                 return
         try:
-            if is_streaming:
-                if role not in after.roles:
-                    await after.add_roles(role, reason="Auto-assigned Streaming role")
-            else:
-                if role in after.roles:
-                    await after.remove_roles(role, reason="Auto-removed Streaming role")
+            if is_streaming and role not in after.roles:
+                await after.add_roles(role, reason="Auto-assigned Streaming role")
+            if not is_streaming and role in after.roles:
+                await after.remove_roles(role, reason="Auto-removed Streaming role")
         except discord.Forbidden:
             pass
 
@@ -100,6 +95,7 @@ bot = ServerManagerBot()
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user} (ID {bot.user.id})")
+    # note: commands synced silently in setup_hook
 
 if __name__ == "__main__":
     asyncio.run(bot.start(TOKEN))

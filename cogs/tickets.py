@@ -90,7 +90,7 @@ class TicketsCog(commands.Cog):
         if interaction.type != discord.InteractionType.component:
             return
         cid = interaction.data.get("custom_id")
-        if cid != "open_ticket_btn" and cid != "close_ticket_btn":
+        if cid not in ("open_ticket_btn", "close_ticket_btn"):
             return
 
         if cid == "open_ticket_btn":
@@ -99,7 +99,6 @@ class TicketsCog(commands.Cog):
             gcfg = cfg.get(gid, {})
             category_id = gcfg.get("ticket_category_id")
             if not category_id:
-                # fallback to panel channel's category
                 panel_chan_id = gcfg.get("ticket_panel_channel")
                 if panel_chan_id:
                     panel_chan = interaction.guild.get_channel(panel_chan_id)
@@ -110,9 +109,8 @@ class TicketsCog(commands.Cog):
                 category = interaction.guild.get_channel(category_id)
             if not category:
                 return await interaction.response.send_message("❌ Ticket category not set. Admins must set one with /setticketcategory.", ephemeral=True)
-            # build overwrites
             overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False)}
-            overwrites[interaction.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            overwrites[interaction.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True)
             for rid in gcfg.get("ticket_roles", []):
                 r = interaction.guild.get_role(rid)
                 if r:
@@ -123,7 +121,6 @@ class TicketsCog(commands.Cog):
             tickets_map = load_tickets()
             tickets_map[str(ticket_chan.id)] = {"owner": interaction.user.id, "guild": interaction.guild.id}
             save_tickets(tickets_map)
-            # close button
             close_view = discord.ui.View(timeout=None)
             close_btn = discord.ui.Button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
             async def close_callback(close_interaction: discord.Interaction):

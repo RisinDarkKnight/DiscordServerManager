@@ -24,13 +24,13 @@ class TwitchCog(commands.Cog):
         self.bot = bot
         self._token = None
         self._token_expires = 0
+        # ensure per-guild twitch dict exists in data.json
         data = load_json(DATA_PATH)
-        # ensure structure exists for every guild in config
         cfg = load_json(CONFIG_PATH)
         changed = False
         for gid in cfg.keys():
             if gid not in data:
-                data.setdefault(gid, {})
+                data[gid] = {}
                 changed = True
             data[gid].setdefault("twitch", {})
         if changed:
@@ -52,8 +52,7 @@ class TwitchCog(commands.Cog):
                     return None
                 data = await r.json()
                 self._token = data.get("access_token")
-                expires = data.get("expires_in", 3600)
-                self._token_expires = now + int(expires)
+                self._token_expires = now + int(data.get("expires_in", 3600))
                 return self._token
 
     async def _fetch_stream(self, username):
@@ -114,7 +113,6 @@ class TwitchCog(commands.Cog):
                                 await notif_channel.send(content=(mention or ""), embed=embed, view=view)
                             except discord.Forbidden:
                                 pass
-                        # mark notified
                         data.setdefault(gid, {}).setdefault("twitch", {}).setdefault(username, {})
                         data[gid]["twitch"][username]["notified"] = stream_id
                         changed = True
@@ -124,6 +122,7 @@ class TwitchCog(commands.Cog):
                             changed = True
                 except Exception as e:
                     print("Twitch check error:", e)
+
         if changed:
             save_json(DATA_PATH, data)
 
@@ -131,7 +130,7 @@ class TwitchCog(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="addstreamer", description="Add a Twitch username to notify (admin)")
+    @app_commands.command(name="addstreamer", description="Add Twitch username to track (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addstreamer(self, interaction: discord.Interaction, username: str):
         data = load_json(DATA_PATH)
@@ -139,12 +138,12 @@ class TwitchCog(commands.Cog):
         data.setdefault(gid, {}).setdefault("twitch", {})
         uname = username.strip().lower()
         if uname in data[gid]["twitch"]:
-            return await interaction.response.send_message("That streamer is already tracked.", ephemeral=True)
+            return await interaction.response.send_message("Streamer already tracked.", ephemeral=True)
         data[gid]["twitch"][uname] = {"notified": None}
         save_json(DATA_PATH, data)
-        await interaction.response.send_message(f"✅ Now tracking Twitch user `{uname}`", ephemeral=True)
+        await interaction.response.send_message(f"✅ Now tracking Twitch `{uname}`", ephemeral=True)
 
-    @app_commands.command(name="removestreamer", description="Remove a tracked Twitch username (admin)")
+    @app_commands.command(name="removestreamer", description="Remove Twitch username (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def removestreamer(self, interaction: discord.Interaction):
         data = load_json(DATA_PATH)
@@ -155,7 +154,7 @@ class TwitchCog(commands.Cog):
         options = [discord.SelectOption(label=s, value=s) for s in list_[:25]]
         class RemoveView(discord.ui.View):
             @discord.ui.select(placeholder="Choose streamer to remove", options=options, min_values=1, max_values=1)
-            async def sel(self, select_interaction: discord.Interaction, select):
+            async def sel(inner_self, select_interaction: discord.Interaction, select):
                 chosen = select.values[0]
                 del data[gid]["twitch"][chosen]
                 save_json(DATA_PATH, data)
