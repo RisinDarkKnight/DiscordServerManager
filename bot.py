@@ -10,28 +10,24 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN missing in .env")
 
-# Intents (presence needed for streaming detection)
+# Intents (presence is needed for streaming-role feature)
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.presences = True
-intents.message_content = False  # Not required; slash commands used
+intents.message_content = False  # not required, we use slash commands
 
 class ServerManagerBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="/", intents=intents, application_id=None)
-        self.cog_list = [
-            "cogs.commands",
-            "cogs.twitch",
-            "cogs.youtube",
-            "cogs.tickets"
-        ]
-        # JSON files
+        super().__init__(command_prefix="/", intents=intents)
+        # cogs to load (in cogs/ package)
+        self.cog_list = ["cogs.commands", "cogs.twitch", "cogs.youtube", "cogs.tickets"]
+        # files
         self.CONFIG_PATH = "server_config.json"
         self.DATA_PATH = "data.json"
         self.TICKETS_PATH = "tickets.json"
         self._ensure_files()
-        # load configs into memory
+        # load into memory
         self.config = self._load_json(self.CONFIG_PATH)
         self.data = self._load_json(self.DATA_PATH)
         self.tickets = self._load_json(self.TICKETS_PATH)
@@ -59,14 +55,14 @@ class ServerManagerBot(commands.Bot):
         self._save_json(self.TICKETS_PATH, self.tickets)
 
     async def setup_hook(self):
-        # load cogs (awaited properly)
+        # await load_extension properly
         for ext in self.cog_list:
             try:
                 await self.load_extension(ext)
                 print(f"✅ Loaded {ext}")
             except Exception as e:
                 print(f"❌ Failed loading {ext}: {e}")
-        # sync commands
+        # sync application commands:
         try:
             await self.tree.sync()
             print("📡 Commands synced")
@@ -74,9 +70,10 @@ class ServerManagerBot(commands.Bot):
             print(f"❌ Command sync failed: {e}")
 
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        # Assign/remove "Streaming" role based on presence streaming activity
-        if not after.guild:
+        """Auto-assign/remove 'Streaming' role when user starts/stops streaming."""
+        if after.guild is None:
             return
+        # detect streaming activity
         was_streaming = any(a.type == discord.ActivityType.streaming for a in (before.activities or []))
         is_streaming = any(a.type == discord.ActivityType.streaming for a in (after.activities or []))
         if was_streaming == is_streaming:

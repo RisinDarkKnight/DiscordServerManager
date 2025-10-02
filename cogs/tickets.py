@@ -30,11 +30,7 @@ class TicketsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def _save_cfg(self):
-        cfg = load_config()
-        save_config(cfg)
-
-    @app_commands.command(name="setticketcategory", description="Set the category where tickets are created (admin only)")
+    @app_commands.command(name="setticketcategory", description="Set the category where tickets will be created (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setticketcategory(self, interaction: discord.Interaction, category: discord.CategoryChannel):
         cfg = load_config()
@@ -44,7 +40,7 @@ class TicketsCog(commands.Cog):
         save_config(cfg)
         await interaction.response.send_message(f"✅ Ticket category set to **{category.name}**", ephemeral=True)
 
-    @app_commands.command(name="addticketrole", description="Add a role that can see/manage tickets (admin only)")
+    @app_commands.command(name="addticketrole", description="Add a role that can see/manage tickets (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addticketrole(self, interaction: discord.Interaction, role: discord.Role):
         cfg = load_config()
@@ -57,7 +53,7 @@ class TicketsCog(commands.Cog):
         save_config(cfg)
         await interaction.response.send_message(f"✅ {role.mention} added to ticket roles", ephemeral=True)
 
-    @app_commands.command(name="clearticketroles", description="Clear ticket roles (admin only)")
+    @app_commands.command(name="clearticketroles", description="Clear ticket roles (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def clearticketroles(self, interaction: discord.Interaction):
         cfg = load_config()
@@ -67,7 +63,7 @@ class TicketsCog(commands.Cog):
         save_config(cfg)
         await interaction.response.send_message("✅ Cleared ticket roles", ephemeral=True)
 
-    @app_commands.command(name="setticketpanel", description="Post the ticket panel embed (admin only)")
+    @app_commands.command(name="setticketpanel", description="Post the ticket panel embed (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setticketpanel(self, interaction: discord.Interaction):
         cfg = load_config()
@@ -75,8 +71,6 @@ class TicketsCog(commands.Cog):
         cfg.setdefault(gid, {})
         cfg[gid]["ticket_panel_channel"] = interaction.channel_id
         save_config(cfg)
-
-        # Panel embed text requested
         embed = discord.Embed(
             title="🎫 Support Tickets",
             description=(
@@ -89,11 +83,10 @@ class TicketsCog(commands.Cog):
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label="Open Ticket", style=discord.ButtonStyle.primary, custom_id="open_ticket_btn"))
         await interaction.channel.send(embed=embed, view=view)
-        await interaction.response.send_message("✅ Ticket panel posted in this channel.", ephemeral=True)
+        await interaction.response.send_message("✅ Ticket panel posted.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        # handle button clicks for tickets
         if interaction.type != discord.InteractionType.component:
             return
         cid = interaction.data.get("custom_id")
@@ -105,8 +98,8 @@ class TicketsCog(commands.Cog):
             gid = str(interaction.guild_id)
             gcfg = cfg.get(gid, {})
             category_id = gcfg.get("ticket_category_id")
-            # If not set, try to use the panel channel's category
             if not category_id:
+                # fallback to panel channel's category
                 panel_chan_id = gcfg.get("ticket_panel_channel")
                 if panel_chan_id:
                     panel_chan = interaction.guild.get_channel(panel_chan_id)
@@ -117,36 +110,32 @@ class TicketsCog(commands.Cog):
                 category = interaction.guild.get_channel(category_id)
             if not category:
                 return await interaction.response.send_message("❌ Ticket category not set. Admins must set one with /setticketcategory.", ephemeral=True)
-            # permission overwrites
+            # build overwrites
             overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False)}
-            overwrites[interaction.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, embed_links=True)
-            # add ticket roles
+            overwrites[interaction.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
             for rid in gcfg.get("ticket_roles", []):
                 r = interaction.guild.get_role(rid)
                 if r:
                     overwrites[r] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-            # ensure bot can see
             overwrites[interaction.guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
             chan_name = f"ticket-{interaction.user.name}".lower()[:90]
             ticket_chan = await interaction.guild.create_text_channel(name=chan_name, category=category, overwrites=overwrites)
-            # save mapping
-            tickets = load_tickets()
-            tickets[str(ticket_chan.id)] = {"owner": interaction.user.id, "guild": interaction.guild.id}
-            save_tickets(tickets)
-            # send initial message with Close button
+            tickets_map = load_tickets()
+            tickets_map[str(ticket_chan.id)] = {"owner": interaction.user.id, "guild": interaction.guild.id}
+            save_tickets(tickets_map)
+            # close button
             close_view = discord.ui.View(timeout=None)
             close_btn = discord.ui.Button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
             async def close_callback(close_interaction: discord.Interaction):
-                tickets2 = load_tickets()
+                tm = load_tickets()
                 tid = str(close_interaction.channel.id)
-                if tid not in tickets2:
+                if tid not in tm:
                     return await close_interaction.response.send_message("This is not a ticket channel.", ephemeral=True)
-                owner_id = tickets2[tid]["owner"]
+                owner_id = tm[tid]["owner"]
                 if close_interaction.user.id != owner_id and not close_interaction.user.guild_permissions.administrator:
                     return await close_interaction.response.send_message("You don't have permission to close this ticket.", ephemeral=True)
-                # delete mapping & channel
-                del tickets2[tid]
-                save_tickets(tickets2)
+                del tm[tid]
+                save_tickets(tm)
                 await close_interaction.response.send_message("Closing ticket...", ephemeral=True)
                 await close_interaction.channel.delete()
             close_btn.callback = close_callback

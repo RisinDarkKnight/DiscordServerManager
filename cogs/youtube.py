@@ -20,14 +20,14 @@ def save_json(path, data):
 
 async def resolve_channel_id(raw):
     raw = raw.strip()
-    # If already a channel ID (starts with UC)
+    # direct channel ID
     if re.match(r"^UC[a-zA-Z0-9_-]{20,}$", raw):
         return raw
-    # channel URL
+    # /channel/ID
     m = re.search(r"youtube\.com\/channel\/([A-Za-z0-9_-]+)", raw)
     if m:
         return m.group(1)
-    # user URL
+    # /user/NAME -> forUsername
     m = re.search(r"youtube\.com\/user\/([A-Za-z0-9_-]+)", raw)
     if m:
         username = m.group(1)
@@ -45,7 +45,6 @@ async def resolve_channel_id(raw):
     m = re.search(r"(?:youtube\.com\/@|@)([A-Za-z0-9_\-]+)", raw)
     if m:
         handle = m.group(1)
-        # search for channel by handle
         url = "https://www.googleapis.com/youtube/v3/search"
         params = {"part":"snippet","q":f"@{handle}","type":"channel","maxResults":1,"key":YOUTUBE_API_KEY}
         async with aiohttp.ClientSession() as s:
@@ -56,7 +55,7 @@ async def resolve_channel_id(raw):
                 items = data.get("items", [])
                 if items:
                     return items[0]["snippet"]["channelId"]
-    # fallback: search by text
+    # fallback search
     url = "https://www.googleapis.com/youtube/v3/search"
     params = {"part":"snippet","q":raw,"type":"channel","maxResults":1,"key":YOUTUBE_API_KEY}
     async with aiohttp.ClientSession() as s:
@@ -82,15 +81,16 @@ async def fetch_latest_video(channel_id):
                 return None
             v = items[0]
             vid_id = v["id"]["videoId"]
-            return {"id": vid_id, "title": v["snippet"]["title"], "thumb": v["snippet"]["thumbnails"].get("high", {}).get("url"), "channelTitle": v["snippet"]["channelTitle"], "url": f"https://www.youtube.com/watch?v={vid_id}"}
+            return {"id": vid_id, "title": v["snippet"]["title"], "thumb": v["snippet"]["thumbnails"].get("high",{}).get("url"), "channelTitle": v["snippet"]["channelTitle"], "url": f"https://www.youtube.com/watch?v={vid_id}"}
 
 class YouTubeCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        # ensure structure
+        # ensure data structure
         data = load_json(DATA_PATH)
+        cfg = load_json(CONFIG_PATH)
         changed = False
-        for gid in list(self.bot.config.keys()):
+        for gid in cfg.keys():
             data.setdefault(gid, {})
             data[gid].setdefault("youtube", {})
         if changed:
@@ -128,7 +128,6 @@ class YouTubeCog(commands.Cog):
                         continue
                     if meta.get("last_video") == latest["id"]:
                         continue
-                    # send embed + button + ping role
                     embed = discord.Embed(title=latest["title"], url=latest["url"], description=f"New upload from {latest['channelTitle']}", color=discord.Color.red())
                     if latest.get("thumb"):
                         embed.set_image(url=latest["thumb"])
@@ -136,7 +135,7 @@ class YouTubeCog(commands.Cog):
                     view.add_item(discord.ui.Button(label="Watch Video", url=latest["url"], style=discord.ButtonStyle.link))
                     if notif_channel:
                         try:
-                            await notif_channel.send(content=mention or "", embed=embed, view=view)
+                            await notif_channel.send(content=(mention or ""), embed=embed, view=view)
                         except discord.Forbidden:
                             pass
                     # mark posted
@@ -152,22 +151,21 @@ class YouTubeCog(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
-    # Slash add/remove commands
-    @app_commands.command(name="addyoutuber", description="Add a YouTube channel to track (URL/handle/channelId) (admin only)")
+    @app_commands.command(name="addyoutuber", description="Add a YouTube channel (URL/handle/channelId) to track (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addyoutuber(self, interaction: discord.Interaction, raw: str):
         gid = str(interaction.guild_id)
         data = load_json(DATA_PATH)
         channel_id = await resolve_channel_id(raw)
         if not channel_id:
-            return await interaction.response.send_message("❌ Couldn't resolve channel ID from input.", ephemeral=True)
+            return await interaction.response.send_message("❌ Could not resolve channel ID from input.", ephemeral=True)
         data.setdefault(gid, {}).setdefault("youtube", {})
-        # key stored as provided raw string to keep reference (but channel_id used for API)
+        # keep raw key so admin sees what was added
         data[gid]["youtube"][raw] = {"channel_id": channel_id, "last_video": None}
         save_json(DATA_PATH, data)
-        await interaction.response.send_message(f"✅ Now tracking YouTube channel `{raw}` (id: {channel_id})", ephemeral=True)
+        await interaction.response.send_message(f"✅ Now tracking YouTube `{raw}` (id: {channel_id})", ephemeral=True)
 
-    @app_commands.command(name="removeyoutuber", description="Remove a tracked YouTube channel (admin only)")
+    @app_commands.command(name="removeyoutuber", description="Remove a tracked YouTube channel (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def removeyoutuber(self, interaction: discord.Interaction):
         data = load_json(DATA_PATH)
