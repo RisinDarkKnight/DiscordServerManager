@@ -1,5 +1,4 @@
-# cogs/tickets.py
-import discord, json, os
+import discord, os, json
 from discord.ext import commands
 from discord import app_commands
 
@@ -22,15 +21,15 @@ def load_tickets():
     with open(TICKETS, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_tickets(t):
+def save_tickets(d):
     with open(TICKETS, "w", encoding="utf-8") as f:
-        json.dump(t, f, indent=4)
+        json.dump(d, f, indent=4)
 
 class TicketsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="setticketcategory", description="Set the category where tickets will be created (admin)")
+    @app_commands.command(name="setticketcategory", description="Set category where tickets are created (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setticketcategory(self, interaction: discord.Interaction, category: discord.CategoryChannel):
         cfg = load_config()
@@ -53,16 +52,6 @@ class TicketsCog(commands.Cog):
         save_config(cfg)
         await interaction.response.send_message(f"✅ {role.mention} added to ticket roles", ephemeral=True)
 
-    @app_commands.command(name="clearticketroles", description="Clear ticket roles (admin)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def clearticketroles(self, interaction: discord.Interaction):
-        cfg = load_config()
-        gid = str(interaction.guild_id)
-        cfg.setdefault(gid, {})
-        cfg[gid]["ticket_roles"] = []
-        save_config(cfg)
-        await interaction.response.send_message("✅ Cleared ticket roles", ephemeral=True)
-
     @app_commands.command(name="setticketpanel", description="Post the ticket panel embed (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setticketpanel(self, interaction: discord.Interaction):
@@ -75,8 +64,7 @@ class TicketsCog(commands.Cog):
             title="🎫 Support Tickets",
             description=(
                 "Any report complaints or suggestions?\n\n"
-                "Please use this system to report issues, rule violations, suggestions or other concerns to our moderation team. "
-                "Your report will be reviewed as soon as possible."
+                "Please use this system to report issues, rule violations, suggestions or other concerns to our moderation team. Your report will be reviewed as soon as possible."
             ),
             color=discord.Color.green()
         )
@@ -92,7 +80,6 @@ class TicketsCog(commands.Cog):
         cid = interaction.data.get("custom_id")
         if cid not in ("open_ticket_btn", "close_ticket_btn"):
             return
-
         if cid == "open_ticket_btn":
             cfg = load_config()
             gid = str(interaction.guild_id)
