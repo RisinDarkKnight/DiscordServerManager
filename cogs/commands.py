@@ -1,28 +1,83 @@
-import discord
+# cogs/commands.py
+import discord, json
 from discord.ext import commands
 from discord import app_commands
 
-class General(commands.Cog):
+CONFIG = "server_config.json"
+DATA = "data.json"
+
+def load_config():
+    with open(CONFIG, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_config(cfg):
+    with open(CONFIG, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4)
+
+class CommandsCog(commands.Cog):
+    """General admin and help commands (slash commands)."""
+
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="help", description="List all available commands")
-    async def help_command(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="📖 Bot Help",
-            description="Here are the commands you can use:",
-            color=discord.Color.blurple()
-        )
-        embed.add_field(name="/help", value="Show this message", inline=False)
-        embed.add_field(name="/addstreamer <twitch_username>", value="Add a Twitch streamer for notifications", inline=False)
-        embed.add_field(name="/removestreamer", value="Remove a Twitch streamer (dropdown)", inline=False)
-        embed.add_field(name="/setstreamchannel", value="Set the channel for Twitch notifications", inline=False)
-        embed.add_field(name="/addyoutuber <youtube_url>", value="Add a YouTube channel for notifications", inline=False)
-        embed.add_field(name="/removeyoutuber", value="Remove a YouTube channel (dropdown)", inline=False)
-        embed.add_field(name="/setyoutubechannel", value="Set the channel for YouTube notifications", inline=False)
-        embed.add_field(name="/setticketcategory", value="Set the category where tickets are created", inline=False)
-        embed.add_field(name="/addticketpanel", value="Post the ticket panel embed", inline=False)
+    @app_commands.command(name="help", description="Show a list of bot commands")
+    async def help(self, interaction: discord.Interaction):
+        embed = discord.Embed(title="📖 Bot Help", color=discord.Color.blurple())
+        embed.add_field(name="/help", value="Show this help", inline=False)
+        embed.add_field(name="/addstreamer <username> <role>", value="Track Twitch streamer and the role to ping (admin)", inline=False)
+        embed.add_field(name="/removestreamer", value="Remove a tracked Twitch streamer (admin, dropdown)", inline=False)
+        embed.add_field(name="/setstreamchannel <channel>", value="Set Twitch notification channel (admin)", inline=False)
+        embed.add_field(name="/setstreamrole <role>", value="Set role to ping for Twitch (admin)", inline=False)
+        embed.add_field(name="/addyoutuber <url_or_id> <role>", value="Track YouTube channel and role (admin)", inline=False)
+        embed.add_field(name="/removeyoutuber", value="Remove tracked YouTube channel (admin, dropdown)", inline=False)
+        embed.add_field(name="/setyoutubechannel <channel>", value="Set YouTube notification channel (admin)", inline=False)
+        embed.add_field(name="/setyoutuberole <role>", value="Set role to ping for YouTube (admin)", inline=False)
+        embed.add_field(name="/setticketcategory <category>", value="Set category to create tickets (admin)", inline=False)
+        embed.add_field(name="/setticketpanel", value="Post ticket panel embed with open-button (admin)", inline=False)
+        embed.add_field(name="/addticketrole <role>", value="Add role that can see/manage tickets (admin)", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    # Twitch channel + role (per-guild)
+    @app_commands.command(name="setstreamchannel", description="Set the channel for Twitch notifications (admin)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setstreamchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        cfg = load_config()
+        gid = str(interaction.guild_id)
+        cfg.setdefault(gid, {})
+        cfg[gid]["twitch_notif_channel"] = channel.id
+        save_config(cfg)
+        await interaction.response.send_message(f"✅ Twitch notifications will go to {channel.mention}", ephemeral=True)
+
+    @app_commands.command(name="setstreamrole", description="Set the role to ping for Twitch notifications (admin)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setstreamrole(self, interaction: discord.Interaction, role: discord.Role):
+        cfg = load_config()
+        gid = str(interaction.guild_id)
+        cfg.setdefault(gid, {})
+        cfg[gid]["streamer_role_id"] = role.id
+        save_config(cfg)
+        await interaction.response.send_message(f"✅ Streamer role set to {role.mention}", ephemeral=True)
+
+    # YouTube channel + role
+    @app_commands.command(name="setyoutubechannel", description="Set the channel for YouTube notifications (admin)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setyoutubechannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        cfg = load_config()
+        gid = str(interaction.guild_id)
+        cfg.setdefault(gid, {})
+        cfg[gid]["youtube_notif_channel"] = channel.id
+        save_config(cfg)
+        await interaction.response.send_message(f"✅ YouTube notifications will go to {channel.mention}", ephemeral=True)
+
+    @app_commands.command(name="setyoutuberole", description="Set the role to ping for YouTube notifications (admin)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setyoutuberole(self, interaction: discord.Interaction, role: discord.Role):
+        cfg = load_config()
+        gid = str(interaction.guild_id)
+        cfg.setdefault(gid, {})
+        cfg[gid]["youtuber_role_id"] = role.id
+        save_config(cfg)
+        await interaction.response.send_message(f"✅ YouTuber role set to {role.mention}", ephemeral=True)
+
 async def setup(bot):
-    await bot.add_cog(General(bot))
+    await bot.add_cog(CommandsCog(bot))
