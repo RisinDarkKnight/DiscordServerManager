@@ -1,3 +1,4 @@
+# cogs/twitch.py
 import os
 import time
 import json
@@ -9,6 +10,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 
 log = logging.getLogger("twitch_cog")
+
 CONFIG_FILE = "server_config.json"
 DATA_FILE = "data.json"
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
@@ -17,12 +19,13 @@ POLL_SECONDS = 180  # 3 minutes
 
 def load_json(path):
     if not os.path.exists(path):
-        return {}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({}, f)
     with open(path, "r", encoding="utf-8") as f:
         try:
             return json.load(f)
         except json.JSONDecodeError:
-            log.exception("JSON corrupted: %s", path)
+            log.exception("JSON corrupted, resetting: %s", path)
             return {}
 
 def save_json(path, data):
@@ -30,6 +33,11 @@ def save_json(path, data):
         json.dump(data, f, indent=4)
 
 class TwitchCog(commands.Cog):
+    """Twitch tracking: /addstreamer, /removestreamer, /setstreamchannel, /setstreamnotifrole
+       Polls Twitch Helix and posts embed + Watch button when streamer goes live.
+       Deduped via data.json storing last stream id per (guild, streamer).
+    """
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.session = aiohttp.ClientSession()
@@ -37,10 +45,10 @@ class TwitchCog(commands.Cog):
         self._token_expires = 0
         # ensure data structures exist
         cfg = load_json(CONFIG_FILE)
-        data = load_json(DATA_FILE)
+        d = load_json(DATA_FILE)
         for gid in cfg.keys():
-            data.setdefault(gid, {}).setdefault("twitch", {})
-        save_json(DATA_FILE, data)
+            d.setdefault(gid, {}).setdefault("twitch", {})
+        save_json(DATA_FILE, d)
         self.check_streams.start()
 
     def cog_unload(self):
@@ -55,19 +63,19 @@ class TwitchCog(commands.Cog):
         if self._token and now < self._token_expires - 60:
             return self._token
         if not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
-            log.warning("Twitch credentials missing from .env")
+            log.warning("Twitch client id/secret missing in env; Twitch features disabled")
             return None
         url = "https://id.twitch.tv/oauth2/token"
         params = {"client_id": TWITCH_CLIENT_ID, "client_secret": TWITCH_CLIENT_SECRET, "grant_type": "client_credentials"}
         async with aiohttp.ClientSession() as s:
             async with s.post(url, params=params) as r:
                 if r.status != 200:
-                    log.error("Failed to get Twitch token: %s", await r.text())
+                    log.error("Failed to fetch Twitch token: %s", await r.text())
                     return None
-                data = await r.json()
-                self._token = data.get("access_token")
-                self._token_expires = now + int(data.get("expires_in", 3600))
-                log.debug("Obtained Twitch token, expires in %s", data.get("expires_in"))
+                j = await r.json()
+                self._token = j.get("access_token")
+                self._token_expires = now + int(j.get("expires_in", 3600))
+                log.debug("Obtained Twitch token; expires in %s", j.get("expires_in"))
                 return self._token
 
     async def _fetch_stream(self, username: str):
@@ -79,10 +87,10 @@ class TwitchCog(commands.Cog):
         params = {"user_login": username}
         async with self.session.get(url, headers=headers, params=params) as r:
             if r.status != 200:
-                log.debug("Twitch API non-200 (%s): %s", r.status, await r.text())
+                log.debug("Twitch API returned %s for %s: %s", r.status, username, await r.text())
                 return None
-            d = await r.json()
-            items = d.get("data", [])
+            j = await r.json()
+            items = j.get("data", [])
             return items[0] if items else None
 
     @tasks.loop(seconds=POLL_SECONDS)
@@ -91,57 +99,75 @@ class TwitchCog(commands.Cog):
         cfg = load_json(CONFIG_FILE)
         data = load_json(DATA_FILE)
         changed = False
+
         for gid, gcfg in cfg.items():
             guild = self.bot.get_guild(int(gid))
             if not guild:
-                log.debug("Guild %s not cached locally", gid)
+                log.debug("Guild %s not cached", gid)
                 continue
-            twitch_cfg = gcfg.get("twitch", {})
-            streamers = twitch_cfg.get("streamers", [])
-            channel_id = twitch_cfg.get("notif_channel")
-            role_id = twitch_cfg.get("notif_role")
+
+            tcfg = gcfg.get("twitch", {})
+            streamers = tcfg.get("streamers", [])
+            channel_id = tcfg.get("notif_channel")
+            role_id = tcfg.get("notif_role")
             if not streamers or not channel_id or not role_id:
                 continue
+
             channel = guild.get_channel(channel_id)
             if not channel:
-                log.warning("Twitch notif channel %s not found in guild %s", channel_id, gid)
+                log.warning("Twitch notif channel %s missing in guild %s", channel_id, gid)
                 continue
-            mention = guild.get_role(role_id).mention if guild.get_role(role_id) else ""
-            for username in streamers:
+
+            role = guild.get_role(role_id)
+            mention = role.mention if role else ""
+
+            for username in list(streamers):
                 try:
                     stream = await self._fetch_stream(username)
-                    meta = data.setdefault(gid, {}).setdefault("twitch", {}).setdefault(username, {"notified": None})
+                    metas = data.setdefault(gid, {}).setdefault("twitch", {})
+                    meta = metas.setdefault(username, {"notified": None})
+
                     if stream:
                         sid = stream.get("id")
                         if meta.get("notified") == sid:
-                            log.debug("Already notified guild %s for %s stream id %s", gid, username, sid)
+                            # already notified for this stream id
                             continue
-                        title = stream.get("title", "")
+
+                        title = stream.get("title", "") or f"{stream.get('user_name', username)} is live!"
                         user_name = stream.get("user_name", username)
-                        game = stream.get("game_name", "Unknown")
+                        game = stream.get("game_name") or "Unknown"
                         viewers = stream.get("viewer_count", 0)
                         thumb = stream.get("thumbnail_url", "").replace("{width}", "1280").replace("{height}", "720")
-                        embed = discord.Embed(title=title or f"{user_name} is LIVE!", url=f"https://twitch.tv/{username}",
-                                              description=f"Playing **{game}** • {viewers} viewers", color=discord.Color.purple())
+
+                        embed = discord.Embed(
+                            title=title,
+                            url=f"https://twitch.tv/{username}",
+                            description=f"Playing **{game}** • {viewers} viewers",
+                            color=discord.Color.purple()
+                        )
                         if thumb:
                             embed.set_image(url=thumb)
+
                         view = discord.ui.View()
                         view.add_item(discord.ui.Button(label="▶ Watch Stream", url=f"https://twitch.tv/{username}", style=discord.ButtonStyle.link))
-                        msg = f"{user_name} is live, come say hello :D {mention}"
+
+                        content = f"{user_name} is live, come say hello :D {mention}"
                         try:
-                            await channel.send(content=msg, embed=embed, view=view)
+                            await channel.send(content=content, embed=embed, view=view)
                             log.info("Sent Twitch notification for %s in guild %s", username, gid)
                         except discord.Forbidden:
-                            log.exception("Forbidden sending twitch message in guild %s channel %s", gid, channel_id)
+                            log.exception("No permission to send Twitch notification in guild %s channel %s", gid, channel_id)
+
                         data[gid]["twitch"][username]["notified"] = sid
                         changed = True
                     else:
-                        # offline -> reset notified so next stream will trigger again
+                        # reset notified when offline so next stream triggers
                         if meta.get("notified"):
                             data[gid]["twitch"][username]["notified"] = None
                             changed = True
                 except Exception:
-                    log.exception("Error checking streamer %s in guild %s", username, gid)
+                    log.exception("Error while checking streamer %s in guild %s", username, gid)
+
         if changed:
             save_json(DATA_FILE, data)
 
@@ -149,20 +175,28 @@ class TwitchCog(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
-    # Commands
+    # --------------- Commands ---------------
     @app_commands.command(name="addstreamer", description="Add a Twitch username to track (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addstreamer(self, interaction: discord.Interaction, username: str):
+        username = username.strip().lower()
+        if not username:
+            await interaction.response.send_message("Please provide a Twitch username.", ephemeral=True)
+            return
         cfg = load_json(CONFIG_FILE)
         gid = str(interaction.guild_id)
-        cfg.setdefault(gid, {}).setdefault("twitch", {}).setdefault("streamers", [])
-        uname = username.strip().lower()
-        if uname in [s.lower() for s in cfg[gid]["twitch"]["streamers"]]:
+        tcfg = cfg.setdefault(gid, {}).setdefault("twitch", {})
+        tcfg.setdefault("streamers", [])
+        if username in [s.lower() for s in tcfg["streamers"]]:
             await interaction.response.send_message("That streamer is already tracked.", ephemeral=True)
             return
-        cfg[gid]["twitch"]["streamers"].append(uname)
+        tcfg["streamers"].append(username)
         save_json(CONFIG_FILE, cfg)
-        await interaction.response.send_message(f"✅ Added Twitch streamer `{uname}`", ephemeral=True)
+        # ensure data slot exists
+        data = load_json(DATA_FILE)
+        data.setdefault(gid, {}).setdefault("twitch", {}).setdefault(username, {"notified": None})
+        save_json(DATA_FILE, data)
+        await interaction.response.send_message(f"✅ Added Twitch streamer `{username}`", ephemeral=True)
 
     @app_commands.command(name="removestreamer", description="Remove a tracked Twitch streamer (admin)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -171,33 +205,44 @@ class TwitchCog(commands.Cog):
         gid = str(interaction.guild_id)
         streamers = cfg.get(gid, {}).get("twitch", {}).get("streamers", [])
         if not streamers:
-            await interaction.response.send_message("No Twitch streamers tracked.", ephemeral=True)
+            await interaction.response.send_message("No Twitch streamers tracked for this server.", ephemeral=True)
             return
+
         options = [discord.SelectOption(label=s, value=s) for s in streamers[:25]]
+
         class RemoveView(discord.ui.View):
-            @discord.ui.select(placeholder="Select streamer to remove", options=options, min_values=1, max_values=1)
-            async def select_callback(inner_self, select_interaction: discord.Interaction, select):
+            @discord.ui.select(placeholder="Select a streamer to remove", options=options, min_values=1, max_values=1)
+            async def select_callback(self, select, select_interaction: discord.Interaction):
                 chosen = select.values[0]
                 cfg_local = load_json(CONFIG_FILE)
                 cfg_local[gid]["twitch"]["streamers"].remove(chosen)
                 save_json(CONFIG_FILE, cfg_local)
-                # clear any saved notified state
+                # remove saved notified state
                 data = load_json(DATA_FILE)
                 if data.get(gid, {}).get("twitch", {}).get(chosen):
                     del data[gid]["twitch"][chosen]
                     save_json(DATA_FILE, data)
                 await select_interaction.response.edit_message(content=f"✅ Removed `{chosen}`", view=None)
+
         await interaction.response.send_message("Choose a streamer to remove:", view=RemoveView(), ephemeral=True)
 
-    @app_commands.command(name="setstreamchannel", description="Set channel for Twitch notifications (admin)")
+    @app_commands.command(name="setstreamchannel", description="Set the channel where Twitch notifications will be posted (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setstreamchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         cfg = load_json(CONFIG_FILE)
         gid = str(interaction.guild_id)
-        cfg.setdefault(gid, {}).setdefault("twitch", {})
-        cfg[gid]["twitch"]["notif_channel"] = channel.id
+        cfg.setdefault(gid, {}).setdefault("twitch", {})["notif_channel"] = channel.id
         save_json(CONFIG_FILE, cfg)
         await interaction.response.send_message(f"✅ Twitch notifications will be sent to {channel.mention}", ephemeral=True)
+
+    @app_commands.command(name="setstreamnotifrole", description="Set the role to ping when a Twitch streamer goes live (admin)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setstreamnotifrole(self, interaction: discord.Interaction, role: discord.Role):
+        cfg = load_json(CONFIG_FILE)
+        gid = str(interaction.guild_id)
+        cfg.setdefault(gid, {}).setdefault("twitch", {})["notif_role"] = role.id
+        save_json(CONFIG_FILE, cfg)
+        await interaction.response.send_message(f"✅ Stream notification role set to {role.mention}", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TwitchCog(bot))
