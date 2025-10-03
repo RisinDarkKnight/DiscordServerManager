@@ -1,4 +1,3 @@
-# cogs/youtube.py
 import os
 import re
 import json
@@ -19,7 +18,11 @@ def load_json(path):
     if not os.path.exists(path):
         return {}
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            log.exception("JSON corrupted: %s", path)
+            return {}
 
 def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
@@ -27,6 +30,7 @@ def save_json(path, data):
 
 async def resolve_channel_id(raw: str):
     raw = raw.strip()
+    # direct channel id
     if re.match(r"^UC[A-Za-z0-9_-]{20,}$", raw):
         return raw
     m = re.search(r"youtube\.com\/channel\/([A-Za-z0-9_-]+)", raw)
@@ -86,7 +90,7 @@ async def fetch_latest_video(channel_id: str):
             v = items[0]
             vid = v["id"]["videoId"]
             snippet = v["snippet"]
-            thumb = snippet.get("thumbnails", {}).get("high", {}).get("url") or snippet.get("thumbnails", {}).get("default", {}).get("url")
+            thumb = snippet.get("thumbnails", {}).get("maxres", {}).get("url") or snippet.get("thumbnails", {}).get("high", {}).get("url") or snippet.get("thumbnails", {}).get("default", {}).get("url")
             return {
                 "id": vid,
                 "title": snippet.get("title"),
@@ -99,14 +103,12 @@ class YouTubeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.session = aiohttp.ClientSession()
+        # ensure data
         cfg = load_json(CONFIG_FILE)
-        d = load_json(DATA_FILE)
-        changed = False
+        data = load_json(DATA_FILE)
         for gid in cfg.keys():
-            d.setdefault(gid, {})
-            d[gid].setdefault("youtube", {})
-        if changed:
-            save_json(DATA_FILE, d)
+            data.setdefault(gid, {}).setdefault("youtube", {})
+        save_json(DATA_FILE, data)
         self.check_uploads.start()
 
     def cog_unload(self):
@@ -127,14 +129,14 @@ class YouTubeCog(commands.Cog):
             if not guild:
                 continue
             yt_cfg = gcfg.get("youtube", {})
-            channels = yt_cfg.get("channels", {})  # raw -> {channel_id}
-            notif_channel_id = yt_cfg.get("notif_channel") or gcfg.get("youtube_channel")
-            role_id = yt_cfg.get("notif_role") or gcfg.get("youtube_role")
+            channels = yt_cfg.get("channels", {})  # dict raw-> {channel_id}
+            notif_channel_id = yt_cfg.get("notif_channel")
+            role_id = yt_cfg.get("notif_role")
             if not channels or not notif_channel_id or not role_id:
                 continue
             notif_channel = guild.get_channel(notif_channel_id)
             if not notif_channel:
-                log.warning("YouTube notif channel %s not found for guild %s", notif_channel_id, gid)
+                log.warning("YouTube notif channel %s not in guild %s", notif_channel_id, gid)
                 continue
             mention = guild.get_role(role_id).mention if guild.get_role(role_id) else ""
             for raw, meta in list(channels.items()):
@@ -158,11 +160,11 @@ class YouTubeCog(commands.Cog):
                         await notif_channel.send(content=msg, embed=embed, view=view)
                         log.info("Sent YouTube notification for %s in guild %s", raw, gid)
                     except discord.Forbidden:
-                        log.exception("Forbidden sending youtube msg in guild %s channel %s", gid, notif_channel_id)
+                        log.exception("Forbidden sending youtube message in guild %s channel %s", gid, notif_channel_id)
                     data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(raw, {})["last_video"] = latest["id"]
                     changed = True
                 except Exception:
-                    log.exception("Error checking YouTube channel %s for guild %s", raw, gid)
+                    log.exception("Error checking YouTube entry %s for guild %s", raw, gid)
         if changed:
             save_json(DATA_FILE, data)
 
@@ -179,7 +181,8 @@ class YouTubeCog(commands.Cog):
         cfg.setdefault(gid, {}).setdefault("youtube", {}).setdefault("channels", {})
         channel_id = await resolve_channel_id(raw)
         if not channel_id:
-            return await interaction.response.send_message("❌ Could not resolve a channel ID from input.", ephemeral=True)
+            await interaction.response.send_message("❌ Could not resolve a channel ID from input.", ephemeral=True)
+            return
         cfg[gid]["youtube"]["channels"][raw] = {"channel_id": channel_id}
         save_json(CONFIG_FILE, cfg)
         await interaction.response.send_message(f"✅ Now tracking YouTube `{raw}` (id: {channel_id})", ephemeral=True)
@@ -191,7 +194,8 @@ class YouTubeCog(commands.Cog):
         cfg = load_json(CONFIG_FILE)
         channels = list(cfg.get(gid, {}).get("youtube", {}).get("channels", {}).keys())
         if not channels:
-            return await interaction.response.send_message("No YouTube channels tracked.", ephemeral=True)
+            await interaction.response.send_message("No YouTube channels tracked.", ephemeral=True)
+            return
         options = [discord.SelectOption(label=c, value=c) for c in channels[:25]]
         class RemoveView(discord.ui.View):
             @discord.ui.select(placeholder="Select YouTube to remove", options=options, min_values=1, max_values=1)

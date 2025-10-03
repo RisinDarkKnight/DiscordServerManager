@@ -1,4 +1,3 @@
-# cogs/commands.py
 import os
 import json
 import logging
@@ -13,13 +12,20 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         return {}
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            log.exception("Config JSON corrupted, returning empty config")
+            return {}
 
 def save_config(cfg):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=4)
+    log.debug("Config saved")
 
-class GeneralCommands(commands.Cog):
+class General(commands.Cog):
+    """General utility + notif role/channel management."""
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
@@ -33,26 +39,26 @@ class GeneralCommands(commands.Cog):
             "/setstreamchannel `<channel>` (admin)\n"
             "/setstreamnotifrole `<role>` (admin)\n\n"
             "**YouTube**\n"
-            "/addyoutuber `<url_or_channel_id_or_handle>` (admin)\n"
+            "/addyoutuber `<url_or_handle_or_id>` (admin)\n"
             "/removeyoutuber (admin) — dropdown\n"
             "/setyoutubechannel `<channel>` (admin)\n"
             "/setyoutubenotifrole `<role>` (admin)\n\n"
             "**Tickets**\n"
             "/setticketcategory `<category>` (admin)\n"
-            "/setticketrole `<role>` (admin) — additional roles allowed to view tickets\n"
+            "/setticketrole `<role>` (admin)\n"
+            "/removeticketrole (admin) — dropdown\n"
             "/addticketpanel (admin)\n\n"
             "**Utility**\n"
             "/ping\n"
-            "/resync (admin) — purge & resync global commands\n        "
+            "/resync (admin)\n"
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="ping", description="Check bot latency")
     async def ping(self, interaction: discord.Interaction):
-        ms = round(self.bot.latency * 1000)
-        await interaction.response.send_message(f"Pong! `{ms}ms`", ephemeral=True)
+        await interaction.response.send_message(f"Pong! `{round(self.bot.latency*1000)}ms`", ephemeral=True)
 
-    @app_commands.command(name="resync", description="(Admin) Purge remote commands and resync globally")
+    @app_commands.command(name="resync", description="Purge remote commands and resync globally (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def resync(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -60,12 +66,12 @@ class GeneralCommands(commands.Cog):
             self.bot.tree.clear_commands(guild=None)
             await self.bot.tree.sync(guild=None)
             await interaction.followup.send("✅ Commands purged and resynced globally.", ephemeral=True)
-            log.debug("Manual resync triggered by %s", interaction.user)
-        except Exception as e:
-            log.exception("Resync failed: %s", e)
-            await interaction.followup.send(f"❌ Resync failed: {e}", ephemeral=True)
+            log.debug("Manual resync triggered")
+        except Exception:
+            log.exception("Resync failed")
+            await interaction.followup.send("❌ Resync failed, check logs.", ephemeral=True)
 
-    @app_commands.command(name="setstreamnotifrole", description="Set role to ping for Twitch stream notifications (admin)")
+    @app_commands.command(name="setstreamnotifrole", description="Set role to ping for Twitch notifications (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def set_stream_notif_role(self, interaction: discord.Interaction, role: discord.Role):
         cfg = load_config()
@@ -86,4 +92,4 @@ class GeneralCommands(commands.Cog):
         await interaction.response.send_message(f"✅ YouTube notification role set to {role.mention}", ephemeral=True)
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(GeneralCommands(bot))
+    await bot.add_cog(General(bot))

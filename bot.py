@@ -1,8 +1,7 @@
-# bot.py
 import os
-import json
 import asyncio
 import logging
+import json
 from dotenv import load_dotenv
 import discord
 from discord.ext import commands
@@ -10,32 +9,29 @@ from discord.ext import commands
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-APPLICATION_ID = os.getenv("APPLICATION_ID")  # optional
 if not DISCORD_TOKEN:
     raise RuntimeError("DISCORD_TOKEN missing in .env")
 
-CONFIG_FILE = "server_config.json"
+# Files used by the bot (auto-created if missing)
+SERVER_CONFIG = "server_config.json"
 DATA_FILE = "data.json"
 TICKETS_FILE = "tickets.json"
-
-for p in (CONFIG_FILE, DATA_FILE, TICKETS_FILE):
+for p in (SERVER_CONFIG, DATA_FILE, TICKETS_FILE):
     if not os.path.exists(p):
         with open(p, "w", encoding="utf-8") as f:
-            json.dump({}, f, indent=4)
+            json.dump({}, f)
 
-# Logging
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+# Logging - verbose
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("ServerManager")
 
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
-intents.presences = True
-intents.message_content = False
 
 class ServerManagerBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="/", intents=intents, application_id=int(APPLICATION_ID) if APPLICATION_ID else None)
+        super().__init__(command_prefix="/", intents=intents)
         self.cogs_to_load = [
             "cogs.commands",
             "cogs.twitch",
@@ -44,22 +40,23 @@ class ServerManagerBot(commands.Bot):
         ]
 
     async def setup_hook(self):
-        log.debug("setup_hook start: purging remote global commands if any")
+        # Purge remote global commands to avoid ghost/unknown integration issues
         try:
             self.tree.clear_commands(guild=None)
             await self.tree.sync(guild=None)
             log.debug("Purged remote global commands")
-        except Exception as e:
-            log.exception("Error purging remote commands (may be fine): %s", e)
+        except Exception:
+            log.exception("Error purging remote commands (not fatal)")
 
-        for ext in self.cogs_to_load:
+        # Load cogs
+        for cog in self.cogs_to_load:
             try:
-                await self.load_extension(ext)
-                log.info("Loaded cog: %s", ext)
+                await self.load_extension(cog)
+                log.info("Loaded cog: %s", cog)
             except Exception:
-                log.exception("Failed loading cog %s", ext)
+                log.exception("Failed loading cog %s", cog)
 
-        # global sync (authoritative)
+        # Authoritative global sync
         try:
             synced = await self.tree.sync(guild=None)
             log.info("📡 Commands globally synced (%d)", len(synced))
@@ -68,6 +65,16 @@ class ServerManagerBot(commands.Bot):
 
     async def on_ready(self):
         log.info("✅ Logged in as %s (ID %s)", self.user, self.user.id)
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error: Exception):
+        log.exception("App command error: %s", error)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send("An internal error occurred.", ephemeral=True)
+            else:
+                await interaction.response.send_message("An internal error occurred.", ephemeral=True)
+        except Exception:
+            log.exception("Failed to send error message to user")
 
 bot = ServerManagerBot()
 
