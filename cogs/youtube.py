@@ -1,9 +1,15 @@
 # cogs/youtube.py
-import os, aiohttp, asyncio, json, re
+import os
+import re
+import json
+import aiohttp
+import asyncio
+import logging
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 
+log = logging.getLogger("youtube_cog")
 CONFIG_FILE = "server_config.json"
 DATA_FILE = "data.json"
 YOUTUBE_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -34,6 +40,7 @@ async def resolve_channel_id(raw: str):
         async with aiohttp.ClientSession() as s:
             async with s.get(url, params=params) as r:
                 if r.status != 200:
+                    log.debug("YouTube forUsername lookup failed: %s", await r.text())
                     return None
                 d = await r.json()
                 if d.get("items"):
@@ -46,15 +53,18 @@ async def resolve_channel_id(raw: str):
         async with aiohttp.ClientSession() as s:
             async with s.get(url, params=params) as r:
                 if r.status != 200:
+                    log.debug("YouTube handle lookup failed: %s", await r.text())
                     return None
                 d = await r.json()
                 if d.get("items"):
                     return d["items"][0]["snippet"]["channelId"]
+    # fallback search
     url = "https://www.googleapis.com/youtube/v3/search"
     params = {"part":"snippet","q":raw,"type":"channel","maxResults":1,"key":YOUTUBE_KEY}
     async with aiohttp.ClientSession() as s:
         async with s.get(url, params=params) as r:
             if r.status != 200:
+                log.debug("YouTube search failed: %s", await r.text())
                 return None
             d = await r.json()
             if d.get("items"):
@@ -67,6 +77,7 @@ async def fetch_latest_video(channel_id: str):
     async with aiohttp.ClientSession() as s:
         async with s.get(url, params=params) as r:
             if r.status != 200:
+                log.debug("YouTube search non-200: %s", await r.text())
                 return None
             d = await r.json()
             items = d.get("items", [])
@@ -74,13 +85,20 @@ async def fetch_latest_video(channel_id: str):
                 return None
             v = items[0]
             vid = v["id"]["videoId"]
-            return {"id": vid, "title": v["snippet"]["title"], "thumb": v["snippet"]["thumbnails"].get("high",{}).get("url"), "channelTitle": v["snippet"]["channelTitle"], "url": f"https://www.youtube.com/watch?v={vid}"}
+            snippet = v["snippet"]
+            thumb = snippet.get("thumbnails", {}).get("high", {}).get("url") or snippet.get("thumbnails", {}).get("default", {}).get("url")
+            return {
+                "id": vid,
+                "title": snippet.get("title"),
+                "thumb": thumb,
+                "channelTitle": snippet.get("channelTitle"),
+                "url": f"https://www.youtube.com/watch?v={vid}"
+            }
 
 class YouTubeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.session = aiohttp.ClientSession()
-        # ensure data/config placeholders
         cfg = load_json(CONFIG_FILE)
         d = load_json(DATA_FILE)
         changed = False
@@ -109,13 +127,16 @@ class YouTubeCog(commands.Cog):
             if not guild:
                 continue
             yt_cfg = gcfg.get("youtube", {})
+            channels = yt_cfg.get("channels", {})  # raw -> {channel_id}
             notif_channel_id = yt_cfg.get("notif_channel") or gcfg.get("youtube_channel")
-            role_id = yt_cfg.get("notif_role") or gcfg.get("youtuber_role")
-            if not notif_channel_id or not role_id:
+            role_id = yt_cfg.get("notif_role") or gcfg.get("youtube_role")
+            if not channels or not notif_channel_id or not role_id:
                 continue
             notif_channel = guild.get_channel(notif_channel_id)
+            if not notif_channel:
+                log.warning("YouTube notif channel %s not found for guild %s", notif_channel_id, gid)
+                continue
             mention = guild.get_role(role_id).mention if guild.get_role(role_id) else ""
-            channels = yt_cfg.get("channels", {})  # dict raw -> {channel_id, last_video}
             for raw, meta in list(channels.items()):
                 channel_id = meta.get("channel_id")
                 if not channel_id:
@@ -124,22 +145,24 @@ class YouTubeCog(commands.Cog):
                     latest = await fetch_latest_video(channel_id)
                     if not latest:
                         continue
-                    last_id = data.get(gid, {}).get("youtube", {}).get(raw, {}).get("last_video")
-                    if last_id == latest["id"]:
+                    last_vid = data.get(gid, {}).get("youtube", {}).get(raw, {}).get("last_video")
+                    if last_vid == latest["id"]:
                         continue
-                    embed = discord.Embed(title=latest["title"], url=latest["url"], description=f"New upload from {latest['channelTitle']}", color=discord.Color.red())
+                    embed = discord.Embed(title=latest["title"], url=latest["url"], description=f"New upload from **{latest['channelTitle']}**", color=discord.Color.red())
                     if latest.get("thumb"):
                         embed.set_image(url=latest["thumb"])
                     view = discord.ui.View()
                     view.add_item(discord.ui.Button(label="▶ Watch Video", url=latest["url"], style=discord.ButtonStyle.link))
+                    msg = f"{latest['channelTitle']} just uploaded a new video {mention}"
                     try:
-                        await notif_channel.send(content=(mention or ""), embed=embed, view=view)
+                        await notif_channel.send(content=msg, embed=embed, view=view)
+                        log.info("Sent YouTube notification for %s in guild %s", raw, gid)
                     except discord.Forbidden:
-                        pass
+                        log.exception("Forbidden sending youtube msg in guild %s channel %s", gid, notif_channel_id)
                     data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(raw, {})["last_video"] = latest["id"]
                     changed = True
-                except Exception as e:
-                    print("YouTube check error:", e)
+                except Exception:
+                    log.exception("Error checking YouTube channel %s for guild %s", raw, gid)
         if changed:
             save_json(DATA_FILE, data)
 
@@ -147,6 +170,7 @@ class YouTubeCog(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
+    # Commands
     @app_commands.command(name="addyoutuber", description="Add a YouTube channel (url/handle/id) to track (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addyoutuber(self, interaction: discord.Interaction, raw: str):
@@ -155,12 +179,12 @@ class YouTubeCog(commands.Cog):
         cfg.setdefault(gid, {}).setdefault("youtube", {}).setdefault("channels", {})
         channel_id = await resolve_channel_id(raw)
         if not channel_id:
-            return await interaction.response.send_message("❌ Could not resolve channel ID.", ephemeral=True)
+            return await interaction.response.send_message("❌ Could not resolve a channel ID from input.", ephemeral=True)
         cfg[gid]["youtube"]["channels"][raw] = {"channel_id": channel_id}
         save_json(CONFIG_FILE, cfg)
         await interaction.response.send_message(f"✅ Now tracking YouTube `{raw}` (id: {channel_id})", ephemeral=True)
 
-    @app_commands.command(name="removeyoutuber", description="Remove a tracked YouTube channel (admin)")
+    @app_commands.command(name="removeyoutuber", description="Remove a tracked YouTube entry (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def removeyoutuber(self, interaction: discord.Interaction):
         gid = str(interaction.guild_id)
@@ -181,9 +205,9 @@ class YouTubeCog(commands.Cog):
                     del data[gid]["youtube"][chosen]
                     save_json(DATA_FILE, data)
                 await select_interaction.response.edit_message(content=f"✅ Removed `{chosen}`", view=None)
-        await interaction.response.send_message("Choose a YouTube channel to remove:", view=RemoveView(), ephemeral=True)
+        await interaction.response.send_message("Choose a YouTube entry to remove:", view=RemoveView(), ephemeral=True)
 
-    @app_commands.command(name="setyoutubechannel", description="Set channel for YouTube notifications (admin)")
+    @app_commands.command(name="setyoutubechannel", description="Set the channel for YouTube notifications (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setyoutubechannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         gid = str(interaction.guild_id)
@@ -192,16 +216,6 @@ class YouTubeCog(commands.Cog):
         cfg[gid]["youtube"]["notif_channel"] = channel.id
         save_json(CONFIG_FILE, cfg)
         await interaction.response.send_message(f"✅ YouTube notifications will be sent to {channel.mention}", ephemeral=True)
-
-    @app_commands.command(name="setyoutuberole", description="Set role pinged for YouTube notifications (admin)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def setyoutuberole(self, interaction: discord.Interaction, role: discord.Role):
-        gid = str(interaction.guild_id)
-        cfg = load_json(CONFIG_FILE)
-        cfg.setdefault(gid, {}).setdefault("youtube", {})
-        cfg[gid]["youtube"]["notif_role"] = role.id
-        save_json(CONFIG_FILE, cfg)
-        await interaction.response.send_message(f"✅ YouTuber role set to {role.mention}", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(YouTubeCog(bot))
