@@ -1,79 +1,79 @@
+import os
 import discord
 from discord.ext import commands
 from discord import app_commands
-import asyncio
-import json
-import os
 from dotenv import load_dotenv
+import logging
+import asyncio
 
-# Load environment variables
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Set up bot intents
-intents = discord.Intents.default()
+intents = discord.Intents.all()
 intents.members = True
 intents.guilds = True
 intents.voice_states = True
+intents.messages = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
-CONFIG_FILE = "server_config.json"
+# Initialize the bot
+class DeadChapsBot(commands.Bot):
+    def __init__(self):
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            application_id=os.getenv("APPLICATION_ID")
+        )
 
-# Config handling
-def load_config():
-    if not os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "w") as f:
-            json.dump({}, f)
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    async def setup_hook(self):
+        # Load all cogs dynamically
+        cogs = ["commands", "tickets", "twitch", "youtube", "autovc"]
+        for cog in cogs:
+            try:
+                await self.load_extension(f"cogs.{cog}")
+                logger.info(f"✅ Loaded cog: {cog}")
+            except Exception as e:
+                logger.error(f"❌ Failed to load cog {cog}: {e}")
 
+        # Sync slash commands
+        await self.sync_all_commands()
 
-def save_config(cfg):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=4)
+    async def on_ready(self):
+        logger.info(f"🤖 Logged in as {self.user} (ID: {self.user.id})")
+        logger.info(f"Connected to {len(self.guilds)} guild(s).")
+        logger.info("------")
 
-# Cog Loader
-async def load_cogs():
-    """Load all cogs from the cogs folder."""
-    cogs = ["commands", "tickets", "twitch", "youtube", "autovc"]
-    for cog in cogs:
+    async def sync_all_commands(self):
         try:
-            await bot.load_extension(f"cogs.{cog}")
-            print(f"✅ Loaded cog: {cog}")
+            await self.wait_until_ready()
+            synced = await self.tree.sync()
+            logger.info(f"🔁 Synced {len(synced)} global commands:")
+            for cmd in synced:
+                logger.info(f"  • /{cmd.name} — {cmd.description}")
         except Exception as e:
-            print(f"❌ Failed to load cog '{cog}': {e}")
+            logger.error(f"❌ Failed to sync commands: {e}")
 
-# Bot Events
-@bot.event
-async def on_ready():
-    print(f"🤖 Logged in as: {bot.user} ({bot.user.id})")
-
-    await load_cogs()
-
-    # Try syncing commands
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} global commands:")
-        for cmd in synced:
-            print(f" • /{cmd.name}")
-    except Exception as e:
-        print(f"❌ Command sync failed: {e}")
-
-    print("\n✅ All systems online and ready.\n")
-
-# Error Handling
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ Unknown command.", delete_after=5)
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("⚠️ You don’t have permission to do that.", delete_after=5)
+# Error handling for app commands
+@commands.Cog.listener()
+async def on_app_command_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("❌ You don’t have permission to use this command.", ephemeral=True)
     else:
-        print(f"⚠️ Command error: {error}")
+        logger.error(f"⚠️ Command Error: {error}")
+        await interaction.response.send_message("⚠️ Something went wrong executing that command.", ephemeral=True)
 
+# Run bot
+bot = DeadChapsBot()
 
-# Run the bot
+async def main():
+    async with bot:
+        await bot.start(TOKEN)
+
 if __name__ == "__main__":
-    print("🚀 Starting bot...\n")
-    bot.run(TOKEN)
+    asyncio.run(main())
