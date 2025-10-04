@@ -1,4 +1,3 @@
-# cogs/youtube.py
 import os, re, json, aiohttp, asyncio, logging
 import discord
 from discord.ext import commands, tasks

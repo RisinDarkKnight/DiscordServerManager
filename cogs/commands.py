@@ -1,4 +1,3 @@
-# cogs/commands.py
 import os, json, logging, asyncio
 import discord
 from discord.ext import commands

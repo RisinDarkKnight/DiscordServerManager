@@ -1,4 +1,3 @@
-# bot.py
 import os, asyncio, logging, json
 from dotenv import load_dotenv
 import discord
@@ -28,7 +27,7 @@ intents.message_content = False
 
 bot = commands.Bot(command_prefix="/", intents=intents, application_id=int(APPLICATION_ID) if APPLICATION_ID else None)
 
-COGS = ["cogs.commands", "cogs.tickets", "cogs.twitch", "cogs.youtube"]
+COGS = ["cogs.commands", "cogs.tickets", "cogs.twitch", "cogs.youtube", "cogs.autovc"]
 
 async def load_all_cogs():
     for cog in COGS:

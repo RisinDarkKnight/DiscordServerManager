@@ -1,4 +1,3 @@
-# cogs/twitch.py
 import os, time, json, aiohttp, asyncio, logging
 import discord
 from discord.ext import commands, tasks
