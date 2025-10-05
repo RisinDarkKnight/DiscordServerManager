@@ -60,46 +60,35 @@ class AutoVC(commands.Cog):
 
             logging.info(f"User joined join-to-create VC: {after.channel.name}")
             
-            # Create personal VC and associated text channel
+            # Create personal VC
             category = after.channel.category
             
-            # Create voice channel
             user_vc = await category.create_voice_channel(
                 name=f"{member.display_name}'s VC",
                 user_limit=0,
                 bitrate=64000
             )
             
-            # Create associated text channel
-            text_channel = await category.create_text_channel(
-                name=f"{member.display_name}-controls",
-                topic=f"Control panel for {member.display_name}'s temporary voice channel",
-                overwrites={
-                    member.guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    member: discord.PermissionOverwrite(
-                        view_channel=True,
-                        send_messages=True,
-                        read_messages=True,
-                        embed_links=True,
-                        attach_files=True
-                    )
-                }
-            )
-            
             logging.info(f"Created temporary VC: {user_vc.name}")
-            logging.info(f"Created control text channel: {text_channel.name}")
 
             # Move user into new VC
             await member.move_to(user_vc)
             logging.info(f"Moved {member.display_name} to new VC")
 
-            # Send embed to the created text channel
-            await self.send_vc_embed(text_channel, member, user_vc)
-            logging.info(f"Sent embed to control text channel: {text_channel.name}")
+            # Send embed to the voice channel's built-in text chat
+            try:
+                # Create a message in the voice channel's text chat
+                await self.send_vc_embed_to_voice_chat(user_vc, member)
+                logging.info(f"Sent embed to voice channel text chat")
+            except Exception as e:
+                logging.error(f"Error sending embed to voice chat: {e}")
+                # Fallback: send to system channel if voice chat fails
+                if member.guild.system_channel:
+                    await self.send_vc_embed(member.guild.system_channel, member, user_vc)
 
-            # Delete both channels when empty
-            asyncio.create_task(self.monitor_vc(user_vc, text_channel))
-            logging.info("Started monitoring VC and text channel for deletion")
+            # Delete VC when empty
+            asyncio.create_task(self.monitor_vc(user_vc))
+            logging.info("Started monitoring VC for deletion")
 
         except Exception as e:
             logging.error(f"Error in on_voice_state_update: {e}", exc_info=True)
