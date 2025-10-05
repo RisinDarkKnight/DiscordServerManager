@@ -60,36 +60,46 @@ class AutoVC(commands.Cog):
 
             logging.info(f"User joined join-to-create VC: {after.channel.name}")
             
-            # Create personal VC
+            # Create personal VC and associated text channel
             category = after.channel.category
+            
+            # Create voice channel
             user_vc = await category.create_voice_channel(
                 name=f"{member.display_name}'s VC",
                 user_limit=0,
                 bitrate=64000
             )
             
+            # Create associated text channel
+            text_channel = await category.create_text_channel(
+                name=f"{member.display_name}-controls",
+                topic=f"Control panel for {member.display_name}'s temporary voice channel",
+                overwrites={
+                    member.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                    member: discord.PermissionOverwrite(
+                        view_channel=True,
+                        send_messages=True,
+                        read_messages=True,
+                        embed_links=True,
+                        attach_files=True
+                    )
+                }
+            )
+            
             logging.info(f"Created temporary VC: {user_vc.name}")
+            logging.info(f"Created control text channel: {text_channel.name}")
 
             # Move user into new VC
             await member.move_to(user_vc)
             logging.info(f"Moved {member.display_name} to new VC")
 
-            # Send embed to a text channel (try system channel first, then first available text channel)
-            text_channel = None
-            if member.guild.system_channel:
-                text_channel = member.guild.system_channel
-            else:
-                text_channel = discord.utils.get(member.guild.text_channels, position=0)
-            
-            if text_channel:
-                await self.send_vc_embed(text_channel, member, user_vc)
-                logging.info(f"Sent embed to text channel: {text_channel.name}")
-            else:
-                logging.warning("No text channel found to send embed")
+            # Send embed to the created text channel
+            await self.send_vc_embed(text_channel, member, user_vc)
+            logging.info(f"Sent embed to control text channel: {text_channel.name}")
 
-            # Delete VC when empty
-            asyncio.create_task(self.monitor_vc(user_vc))
-            logging.info("Started monitoring VC for deletion")
+            # Delete both channels when empty
+            asyncio.create_task(self.monitor_vc(user_vc, text_channel))
+            logging.info("Started monitoring VC and text channel for deletion")
 
         except Exception as e:
             logging.error(f"Error in on_voice_state_update: {e}", exc_info=True)
@@ -135,21 +145,34 @@ class AutoVC(commands.Cog):
         view = VCControlView(vc, owner)
         await channel.send(embed=embed, view=view)
 
-    # Delete VC when empty
-    async def monitor_vc(self, vc):
+    # Delete VC and text channel when empty
+    async def monitor_vc(self, vc, text_channel):
         await asyncio.sleep(5)
         while True:
             await asyncio.sleep(10)
             if len(vc.members) == 0:
                 try:
+                    # Delete voice channel first
                     await vc.delete()
                     logging.info(f"Deleted empty temporary VC: {vc.name}")
+                    
+                    # Delete text channel
+                    await text_channel.delete()
+                    logging.info(f"Deleted control text channel: {text_channel.name}")
                     break
+                    
                 except discord.NotFound:
-                    logging.info(f"VC {vc.name} was already deleted")
+                    logging.info(f"VC {vc.name} or text channel was already deleted")
                     break
                 except Exception as e:
-                    logging.error(f"Error deleting VC {vc.name}: {e}")
+                    logging.error(f"Error deleting channels: {e}")
+                    
+                    # Try to delete text channel even if VC deletion fails
+                    try:
+                        await text_channel.delete()
+                        logging.info(f"Deleted text channel after VC error: {text_channel.name}")
+                    except:
+                        pass
                     break
 
     # Update Embed Task
