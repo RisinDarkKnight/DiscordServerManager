@@ -4,9 +4,7 @@ from dotenv import load_dotenv
 import discord
 from discord.ext import commands
 
-# ─────────────────────────────
 # Setup
-# ─────────────────────────────
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
