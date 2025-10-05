@@ -1,347 +1,424 @@
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands
+from discord import app_commands, ui
 import asyncio
 import json
 import os
 import logging
 
-CONFIG_FILE = "server_config.json"
+log = logging.getLogger("autovc")
 
+# File used across your bot (server config). Adjust filename if you use a different one.
+SERVER_CFG = "server_config.json"
+
+# Embed color requested
+EMBED_COLOR = discord.Color(int("a700fa".lstrip("#"), 16))
+
+# Refresh interval
+REFRESH_INTERVAL = 5  # seconds
+
+# Bitrate constraints (kbps)
+MIN_KBPS = 8
+MAX_KBPS = 256
+
+# Helpers
 def load_config():
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
+    if not os.path.exists(SERVER_CFG):
+        return {}
+    with open(SERVER_CFG, "r", encoding="utf-8") as f:
+        try:
             return json.load(f)
-    return {}
+        except Exception:
+            return {}
 
-def save_config(data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+def save_config(cfg):
+    with open(SERVER_CFG, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4)
 
+# UI components
+class ChannelSettingsSelect(ui.Select):
+    def __init__(self, cog, vc, owner):
+        options = [
+            discord.SelectOption(label="Change Name", value="name", description="Rename the channel"),
+            discord.SelectOption(label="Change Limit", value="limit", description="Set user limit"),
+            discord.SelectOption(label="Change Status", value="status", description="Toggle public/private"),
+            discord.SelectOption(label="LFG (Looking for Game)", value="lfg", description="Toggle LFG tag"),
+            discord.SelectOption(label="Change Bitrate", value="bitrate", description="Set bitrate (kbps)"),
+        ]
+        super().__init__(placeholder="⚙️ Channel Settings", min_values=1, max_values=1, options=options)
+        self.cog = cog
+        self.vc = vc
+        self.owner = owner
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner.id and not interaction.user.guild_permissions.manage_channels:
+            return await interaction.response.send_message("❌ Only the channel owner or staff may use these controls.", ephemeral=True)
+
+        choice = self.values[0]
+
+        try:
+            if choice == "name":
+                await interaction.response.send_message("✏️ Please type the new channel name (or `cancel`):", ephemeral=True)
+                msg = await self.cog.bot.wait_for("message", check=lambda m: m.author == interaction.user and m.channel == interaction.channel, timeout=60)
+                if msg.content.lower() == "cancel":
+                    return await interaction.followup.send("Cancelled.", ephemeral=True)
+                new_name = msg.content[:100]
+                await self.vc.edit(name=new_name)
+                await interaction.followup.send(f"✅ Channel renamed to **{new_name}**", ephemeral=True)
+
+            elif choice == "limit":
+                await interaction.response.send_message("🔢 Enter new user limit (0 = unlimited):", ephemeral=True)
+                msg = await self.cog.bot.wait_for("message", check=lambda m: m.author == interaction.user and m.channel == interaction.channel, timeout=60)
+                val = int(msg.content)
+                if val < 0 or val > 99:
+                    return await interaction.followup.send("❌ Limit must be 0–99.", ephemeral=True)
+                await self.vc.edit(user_limit=val)
+                txt = "Unlimited" if val == 0 else str(val)
+                await interaction.followup.send(f"✅ User limit set to **{txt}**", ephemeral=True)
+
+            elif choice == "status":
+                # Public/Private toggle: set default_role connect permission
+                overw = self.vc.overwrites_for(self.vc.guild.default_role)
+                # if connect explicitly False -> make None (public); if None or True -> set False (private)
+                if overw.connect is False:
+                    await self.vc.set_permissions(self.vc.guild.default_role, connect=None)
+                    await interaction.response.send_message("🔓 Channel set to **Public**.", ephemeral=True)
+                else:
+                    await self.vc.set_permissions(self.vc.guild.default_role, connect=False)
+                    await interaction.response.send_message("🔒 Channel set to **Private**.", ephemeral=True)
+
+            elif choice == "lfg":
+                if "[LFG]" in self.vc.name:
+                    new_name = self.vc.name.replace(" [LFG]", "")
+                    await self.vc.edit(name=new_name)
+                    await interaction.response.send_message("🎮 LFG tag removed.", ephemeral=True)
+                else:
+                    new_name = f"{self.vc.name} [LFG]"
+                    if len(new_name) > 100:
+                        new_name = new_name[:100]
+                    await self.vc.edit(name=new_name)
+                    await interaction.response.send_message("🎮 LFG tag added.", ephemeral=True)
+
+            elif choice == "bitrate":
+                await interaction.response.send_message(f"🎚️ Enter desired bitrate in kbps ({MIN_KBPS}–{MAX_KBPS}):", ephemeral=True)
+                msg = await self.cog.bot.wait_for("message", check=lambda m: m.author == interaction.user and m.channel == interaction.channel, timeout=60)
+                kbps = int(msg.content)
+                if kbps < MIN_KBPS or kbps > MAX_KBPS:
+                    return await interaction.followup.send(f"❌ Bitrate must be between {MIN_KBPS} and {MAX_KBPS} kbps.", ephemeral=True)
+                await self.vc.edit(bitrate=kbps * 1000)
+                await interaction.followup.send(f"✅ Bitrate set to **{kbps} kbps**.", ephemeral=True)
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⌛ You took too long — action cancelled.", ephemeral=True)
+        except ValueError:
+            await interaction.followup.send("❌ Invalid number.", ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"❌ API error: {e}", ephemeral=True)
+        finally:
+            # update embed immediately
+            await self.cog.update_vc_embed(self.vc)
+
+class ChannelPermissionsSelect(ui.Select):
+    def __init__(self, cog, vc, owner):
+        options = [
+            discord.SelectOption(label="Lock", value="lock", description="Lock the channel"),
+            discord.SelectOption(label="Unlock", value="unlock", description="Unlock the channel"),
+            discord.SelectOption(label="Permit", value="permit", description="Allow a user/role access"),
+            discord.SelectOption(label="Reject", value="reject", description="Remove access"),
+            discord.SelectOption(label="Invite", value="invite", description="Invite a user"),
+            discord.SelectOption(label="Ghost", value="ghost", description="Hide the channel from others"),
+            discord.SelectOption(label="Unghost", value="unghost", description="Make the channel visible"),
+        ]
+        super().__init__(placeholder="🔒 Channel Permissions", min_values=1, max_values=1, options=options)
+        self.cog = cog
+        self.vc = vc
+        self.owner = owner
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner.id and not interaction.user.guild_permissions.manage_channels:
+            return await interaction.response.send_message("❌ Only the channel owner or staff may use these controls.", ephemeral=True)
+
+        choice = self.values[0]
+        try:
+            if choice == "lock":
+                await self.vc.set_permissions(self.vc.guild.default_role, connect=False)
+                await interaction.response.send_message("🔒 Channel locked.", ephemeral=True)
+
+            elif choice == "unlock":
+                await self.vc.set_permissions(self.vc.guild.default_role, connect=None)
+                await interaction.response.send_message("🔓 Channel unlocked.", ephemeral=True)
+
+            elif choice == "ghost":
+                await self.vc.set_permissions(self.vc.guild.default_role, view_channel=False)
+                # persist ghosted flag
+                cfg = load_config()
+                g = str(self.vc.guild.id)
+                cfg.setdefault(g, {})
+                cfg[g].setdefault("autovcs", {})
+                cfg[g]["autovcs"][str(self.vc.id)] = cfg[g]["autovcs"].get(str(self.vc.id), {})
+                cfg[g]["autovcs"][str(self.vc.id)]["ghosted"] = True
+                save_config(cfg)
+                await interaction.response.send_message("👻 Channel hidden.", ephemeral=True)
+
+            elif choice == "unghost":
+                await self.vc.set_permissions(self.vc.guild.default_role, view_channel=None)
+                cfg = load_config()
+                g = str(self.vc.guild.id)
+                if g in cfg and "autovcs" in cfg[g] and str(self.vc.id) in cfg[g]["autovcs"]:
+                    cfg[g]["autovcs"][str(self.vc.id)]["ghosted"] = False
+                    save_config(cfg)
+                await interaction.response.send_message("💡 Channel visible.", ephemeral=True)
+
+            elif choice in ("permit", "reject", "invite"):
+                await interaction.response.send_message("Mention a user or role in chat to apply this action (or `cancel`):", ephemeral=True)
+                msg = await self.cog.bot.wait_for("message", check=lambda m: m.author == interaction.user and m.channel == interaction.channel, timeout=60)
+                if msg.content.lower() == "cancel":
+                    return await interaction.followup.send("Cancelled.", ephemeral=True)
+                target = None
+                if msg.mentions:
+                    target = msg.mentions[0]
+                elif msg.role_mentions:
+                    target = msg.role_mentions[0]
+                else:
+                    return await interaction.followup.send("❌ No valid mention found.", ephemeral=True)
+
+                if choice == "permit":
+                    await self.vc.set_permissions(target, connect=True, view_channel=True)
+                    await interaction.followup.send(f"✅ {target.mention} permitted.", ephemeral=True)
+                elif choice == "reject":
+                    await self.vc.set_permissions(target, connect=False, view_channel=False)
+                    await interaction.followup.send(f"🚫 {target.mention} rejected.", ephemeral=True)
+                elif choice == "invite":
+                    if isinstance(target, discord.Member):
+                        invite = await self.vc.create_invite(max_uses=1, unique=True)
+                        try:
+                            await target.send(f"You've been invited to join {self.owner.display_name}'s VC: {invite.url}")
+                        except Exception:
+                            pass
+                        await interaction.followup.send(f"✅ Invite sent to {target.mention}.", ephemeral=True)
+                    else:
+                        await interaction.followup.send("❌ Invite target must be a user (not a role).", ephemeral=True)
+                await msg.delete()
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⌛ Timed out; action cancelled.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.followup.send("❌ Bot lacks permission to modify this channel.", ephemeral=True)
+        except Exception as e:
+            log.exception("Permission action failed")
+            await interaction.followup.send("❌ An error occurred.", ephemeral=True)
+        finally:
+            await self.cog.update_vc_embed(self.vc)
+
+class VoiceControlView(ui.View):
+    def __init__(self, cog, vc, owner):
+        super().__init__(timeout=None)
+        self.add_item(ChannelSettingsSelect(cog, vc, owner))
+        self.add_item(ChannelPermissionsSelect(cog, vc, owner))
+
+# Cog
 class AutoVC(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.refresh_status.start()
+        self._tracked = {}  # vc_id -> tracking info (owner, text_channel_id, embed_id)
+        self._refresh_task = self.refresh_embeds
+        self.refresh_embeds.start()
 
     def cog_unload(self):
-        self.refresh_status.cancel()
+        self.refresh_embeds.cancel()
 
-    # Commands
-    @app_commands.command(name="setjoinvc", description="Set the channel to be used as the 'Join to Create' VC (Admin only)")
+    # Admin command to set join VC
+    @app_commands.command(name="setjoinvc", description="Set the 'Join to Create' voice channel (Admin only)")
     @app_commands.checks.has_permissions(administrator=True)
-    async def setjoinvc(self, interaction: discord.Interaction, channel: discord.VoiceChannel):
+    async def setjoinvc(self, interaction: discord.Interaction, voice_channel: discord.VoiceChannel):
         cfg = load_config()
         gid = str(interaction.guild.id)
         cfg.setdefault(gid, {})
-        cfg[gid]["join_vc_id"] = channel.id
+        cfg[guild_key := gid]["join_vc_id"] = voice_channel.id
+        # make sure autovcs dict exists
+        cfg[guild_key].setdefault("autovcs", {})
         save_config(cfg)
-        await interaction.response.send_message(
-            f"✅ Set {channel.mention} as the Join to Create VC.", ephemeral=True
-        )
+        await interaction.response.send_message(f"✅ {voice_channel.mention} saved as Join-to-Create VC.", ephemeral=True)
 
-    # Event listener for voice joins
+    # When someone joins voice
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         try:
-            cfg = load_config()
-            gid = str(member.guild.id)
-            
-            # Check for both possible config keys for backward compatibility
-            join_vc_id = cfg.get(gid, {}).get("join_vc_id") or cfg.get(gid, {}).get("auto_vc_channel_id")
-            
-            logging.info(f"Voice state update for {member.display_name} in guild {gid}")
-            logging.info(f"Join VC ID from config: {join_vc_id}")
-            logging.info(f"After channel: {after.channel}")
-            
-            # Ignore irrelevant changes
-            if not after.channel or not join_vc_id or after.channel.id != join_vc_id:
-                logging.info("Ignoring - not the join VC or no config found")
+            if not after.channel:
+                # ignore leaves here (monitor deletion elsewhere)
                 return
 
-            logging.info(f"User joined join-to-create VC: {after.channel.name}")
-            
-            # Create personal VC (public by default)
+            cfg = load_config()
+            gid = str(member.guild.id)
+            join_vc_id = cfg.get(gid, {}).get("join_vc_id")
+            if not join_vc_id:
+                return
+
+            if after.channel.id != join_vc_id:
+                return
+
+            # Create new personal VC in same category
             category = after.channel.category
-            
-            user_vc = await category.create_voice_channel(
-                name=f"{member.display_name}'s VC",
-                user_limit=0,
-                bitrate=64000
-            )
-            
-            logging.info(f"Created temporary VC: {user_vc.name}")
+            new_name = f"{member.display_name}'s VC"
+            new_vc = await member.guild.create_voice_channel(name=new_name, category=category)
+            await member.move_to(new_vc)
 
-            # Move user into new VC
-            await member.move_to(user_vc)
-            logging.info(f"Moved {member.display_name} to new VC")
+            # Wait for platform to create linked text chat (if present)
+            text_ch = None
+            for _ in range(8):  # ~4 seconds
+                await asyncio.sleep(0.5)
+                # voice channel built-in chat (if available) is exposed as .text_channel in some lib versions;
+                # otherwise, some servers create a channel with same name - but per your requirement we use built-in chat only.
+                text_ch = getattr(new_vc, "text_channel", None)
+                if text_ch:
+                    break
 
-            # Send embed to the voice channel's text chat
-            try:
-                await self.send_vc_embed_to_voice_chat(user_vc, member)
-                logging.info(f"Sent embed to voice channel text chat")
-            except Exception as e:
-                logging.error(f"Error sending embed to voice chat: {e}")
-                # Fallback: send to system channel if voice chat fails
-                if member.guild.system_channel:
-                    await member.guild.system_channel.send(
-                        f"✅ Created temporary voice channel: {user_vc.mention} for {member.mention}\n"
-                        f"Use the controls in the voice channel to customize it!"
-                    )
+            # If still None, attempt to find a text channel with the same name within category (rare)
+            if not text_ch and new_vc.category:
+                for ch in new_vc.category.text_channels:
+                    if ch.name == f"{member.display_name}-chat" and ch.permissions_for(member.guild.me).send_messages:
+                        text_ch = ch
+                        break
 
-            # Delete VC when empty
-            asyncio.create_task(self.monitor_vc(user_vc))
-            logging.info("Started monitoring VC for deletion")
+            # If still None: try small delay to let platform make it available
+            if not text_ch:
+                for _ in range(6):
+                    await asyncio.sleep(0.5)
+                    text_ch = getattr(new_vc, "text_channel", None)
+                    if text_ch:
+                        break
+            if not text_ch:
+                log.warning(f"No built-in text chat available for VC {new_vc.id}; embed will NOT be sent as requested.")
+            else:
+                # send control embed into the built-in text chat
+                owner = member
+                embed = self._build_embed(new_vc, owner)
+                view = VoiceControlView(self, new_vc, owner)
+                msg = await text_ch.send(embed=embed, view=view)
 
+                # track for periodic updates & deletion
+                self._tracked[str(new_vc.id)] = {
+                    "owner_id": owner.id,
+                    "text_channel_id": text_ch.id,
+                    "embed_message_id": msg.id,
+                    "guild_id": str(member.guild.id)
+                }
+                # persist minimal tracking into server config under autovcs
+                cfg.setdefault(gid, {}).setdefault("autovcs", {})
+                cfg[gid]["autovcs"][str(new_vc.id)] = {"owner_id": owner.id, "ghosted": False}
+                save_config(cfg)
+
+                log.info(f"Created VC {new_vc.id} and posted embed in its built-in text chat.")
+
+            # Start monitor that deletes vc and its embed when empty
+            asyncio.create_task(self._monitor_and_cleanup(new_vc))
         except Exception as e:
-            logging.error(f"Error in on_voice_state_update: {e}", exc_info=True)
+            log.exception("Error in on_voice_state_update")
 
-    # Send embed to voice channel's text chat
-    async def send_vc_embed_to_voice_chat(self, vc, owner):
-        # Get current channel state
-        everyone_perms = vc.overwrites_for(vc.guild.default_role)
-        is_locked = everyone_perms.connect is False
-        is_hidden = everyone_perms.view_channel is False
-        
-        # Format bitrate for readability
-        bitrate_kbps = vc.bitrate // 1000
-        
-        # Check if LFG is enabled
-        lfg_status = "🟢 Enabled" if "[LFG]" in vc.name else "🔴 Disabled"
-        
-        # Count current members
-        member_count = len(vc.members)
-        
-        embed = discord.Embed(
-            title=f"🎙️ Voice Channel Control Panel",
-            description=(
-                f"**👤 Channel Owner:** {owner.mention}\n"
-                f"**🔊 This Channel:** {vc.mention}\n\n"
-                "🎛️ **Use the dropdown menus below to customize your voice channel.**\n"
-                "ℹ️ This channel will be deleted automatically when empty.\n\n"
-                "**📊 Current Channel Status:**\n"
-                f"├ **👥 Members:** `{member_count}`\n"
-                f"├ **📝 Name:** `{vc.name}`\n"
-                f"├ **🚪 User Limit:** `{vc.user_limit if vc.user_limit > 0 else 'Unlimited'}`\n"
-                f"├ **🎵 Bitrate:** `{bitrate_kbps} kbps`\n"
-                f"├ **🎯 LFG Tag:** {lfg_status}\n"
-                f"├ **🔒 Locked:** `{'🔒 Yes' if is_locked else '🔓 No'}`\n"
-                f"└ **👻 Hidden:** `{'👻 Yes' if is_hidden else '👁️ No'}`\n\n"
-                "**⚡ Quick Actions Available:**\n"
-                "• 📝 Change channel name\n"
-                "• 👥 Set user limit\n"
-                "• 🎚️ Adjust audio quality\n"
-                "• 🎯 Toggle LFG tag\n"
-                "• 🔒 Lock/unlock channel\n"
-                "• 👻 Hide/show channel"
-            ),
-            color=discord.Color.green() if not is_locked else discord.Color.red()
-        )
-        
-        embed.set_thumbnail(url=owner.display_avatar.url)
-        embed.set_footer(text=f"Channel ID: {vc.id} | Auto-deletes when empty")
-        embed.timestamp = discord.utils.utcnow()
-
-        view = VCControlView(vc, owner)
-        
-        # Send to voice channel's text chat
-        await vc.send(embed=embed, view=view)
-
-    # Delete VC when empty
-    async def monitor_vc(self, vc):
+    async def _monitor_and_cleanup(self, vc: discord.VoiceChannel):
+        # wait a little then monitor emptiness
         await asyncio.sleep(5)
         while True:
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
+            # if channel removed already, stop
+            try:
+                if not vc.guild:
+                    break
+            except Exception:
+                break
             if len(vc.members) == 0:
+                # delete the embed message and text chat entry (if present)
+                tracked = self._tracked.pop(str(vc.id), None)
+                if tracked:
+                    try:
+                        guild = self.bot.get_guild(int(tracked["guild_id"]))
+                        text_ch = guild.get_channel(int(tracked["text_channel_id"]))
+                        if text_ch:
+                            try:
+                                msg = await text_ch.fetch_message(int(tracked["embed_message_id"]))
+                                await msg.delete()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    # remove from config.autovcs
+                    cfg = load_config()
+                    gid = tracked["guild_id"]
+                    if gid in cfg and "autovcs" in cfg[gid] and str(vc.id) in cfg[gid]["autovcs"]:
+                        del cfg[gid]["autovcs"][str(vc.id)]
+                        save_config(cfg)
                 try:
-                    await vc.delete()
-                    logging.info(f"Deleted empty temporary VC: {vc.name}")
-                    break
-                except discord.NotFound:
-                    logging.info(f"VC {vc.name} was already deleted")
-                    break
-                except Exception as e:
-                    logging.error(f"Error deleting VC {vc.name}: {e}")
-                    break
+                    await vc.delete(reason="AutoVC: empty cleanup")
+                    log.info(f"Deleted empty VC {vc.id}")
+                except Exception:
+                    pass
+                break
 
-    # Update Embed Task
-    @tasks.loop(seconds=15)
-    async def refresh_status(self):
-        pass  # reserved for future live embed updates
+    def _build_embed(self, vc: discord.VoiceChannel, owner: discord.Member):
+        # status values
+        everyone_over = vc.overwrites_for(vc.guild.default_role)
+        is_locked = everyone_over.connect is False
+        is_hidden = everyone_over.view_channel is False
+        kbps = max(0, vc.bitrate // 1000)
+        lfg = "[LFG]" in vc.name
 
+        embed = discord.Embed(
+            title=f"🎛️ VC Controls — {owner.display_name}",
+            description=(
+                f"Welcome **{owner.mention}** — manage your temporary voice channel below.\n\n"
+                "Only the owner can use these controls. Changes update live.\n"
+            ),
+            color=EMBED_COLOR
+        )
 
-# ───────────────────────────────
-# VC Controls View
-# ───────────────────────────────
-class VCControlView(discord.ui.View):
-    def __init__(self, vc, owner):
-        super().__init__(timeout=None)
-        self.vc = vc
-        self.owner = owner
-        self.add_item(ChannelSettingsDropdown(vc, owner))
-        self.add_item(ChannelPermissionsDropdown(vc, owner))
+        status_text = (
+            f"**Name:** {vc.name}\n"
+            f"**Owner:** {owner.mention}\n"
+            f"**Members:** {len(vc.members)}/{vc.user_limit or '∞'}\n"
+            f"**Bitrate:** {kbps} kbps\n"
+            f"**Status:** {'Private' if is_locked else 'Public'}\n"
+            f"**LFG:** {'Enabled' if lfg else 'Disabled'}\n"
+            f"**Visibility:** {'Hidden' if is_hidden else 'Visible'}\n"
+        )
+        embed.add_field(name="📊 Live Status", value=status_text, inline=False)
+        embed.set_footer(text=f"VC ID: {vc.id} • Auto-deletes when empty")
+        return embed
 
-class ChannelSettingsDropdown(discord.ui.Select):
-    def __init__(self, vc, owner):
-        self.vc = vc
-        self.owner = owner
-        options = [
-            discord.SelectOption(label="Change Name", description="Rename your voice channel"),
-            discord.SelectOption(label="Change Limit", description="Set user limit"),
-            discord.SelectOption(label="Change Bitrate", description="Adjust audio quality"),
-            discord.SelectOption(label="Toggle LFG", description="Add/remove 'Looking for Game' tag")
-        ]
-        super().__init__(placeholder="🎛️ Channel Settings", options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user != self.owner:
-            return await interaction.response.send_message("❌ Only the owner can edit this VC.", ephemeral=True)
-
-        choice = self.values[0]
-        if choice == "Change Name":
-            try:
-                await interaction.response.send_message("✏️ Enter the new channel name (or 'cancel' to abort):", ephemeral=True)
-                msg = await interaction.client.wait_for(
-                    "message", 
-                    check=lambda m: m.author == interaction.user and m.channel.id == interaction.channel.id,
-                    timeout=60.0
-                )
-                
-                if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("❌ Name change cancelled.", ephemeral=True)
-                
-                if len(msg.content) > 100:
-                    return await interaction.followup.send("❌ Channel name too long (max 100 characters).", ephemeral=True)
-                
-                await self.vc.edit(name=msg.content)
-                await interaction.followup.send(f"✅ Channel renamed to **{msg.content}**.", ephemeral=True)
-                
-            except asyncio.TimeoutError:
-                await interaction.followup.send("❌ Name change timed out.", ephemeral=True)
-            except discord.HTTPException as e:
-                await interaction.followup.send(f"❌ Failed to rename channel: {e.text}", ephemeral=True)
-
-        elif choice == "Change Limit":
-            try:
-                await interaction.response.send_message("👥 Enter a user limit (0-99, or 'cancel' to abort):", ephemeral=True)
-                msg = await interaction.client.wait_for(
-                    "message", 
-                    check=lambda m: m.author == interaction.user and m.channel.id == interaction.channel.id,
-                    timeout=60.0
-                )
-                
-                if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("❌ Limit change cancelled.", ephemeral=True)
-                
-                limit = int(msg.content)
-                if limit < 0 or limit > 99:
-                    return await interaction.followup.send("❌ Limit must be between 0-99.", ephemeral=True)
-                
-                await self.vc.edit(user_limit=limit)
-                limit_text = "Unlimited" if limit == 0 else str(limit)
-                await interaction.followup.send(f"✅ User limit set to **{limit_text}**.", ephemeral=True)
-                
-            except asyncio.TimeoutError:
-                await interaction.followup.send("❌ Limit change timed out.", ephemeral=True)
-            except ValueError:
-                await interaction.followup.send("❌ Invalid number. Please enter a number between 0-99.", ephemeral=True)
-            except discord.HTTPException as e:
-                await interaction.followup.send(f"❌ Failed to set limit: {e.text}", ephemeral=True)
-
-        elif choice == "Change Bitrate":
-            try:
-                await interaction.response.send_message(
-                    "🎚️ Enter new bitrate in kbps (8-384, or 'cancel' to abort):\n"
-                    "*Recommended: 64kbps for normal quality, 128kbps for high quality*",
-                    ephemeral=True
-                )
-                msg = await interaction.client.wait_for(
-                    "message", 
-                    check=lambda m: m.author == interaction.user and m.channel.id == interaction.channel.id,
-                    timeout=60.0
-                )
-                
-                if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("❌ Bitrate change cancelled.", ephemeral=True)
-                
-                kbps = int(msg.content)
-                if kbps < 8 or kbps > 384:
-                    return await interaction.followup.send("❌ Bitrate must be between 8-384 kbps.", ephemeral=True)
-                
-                bitrate = kbps * 1000
-                await self.vc.edit(bitrate=bitrate)
-                await interaction.followup.send(f"✅ Bitrate set to **{kbps} kbps**.", ephemeral=True)
-                
-            except asyncio.TimeoutError:
-                await interaction.followup.send("❌ Bitrate change timed out.", ephemeral=True)
-            except ValueError:
-                await interaction.followup.send("❌ Invalid number. Please enter a number between 8-384.", ephemeral=True)
-            except discord.HTTPException as e:
-                await interaction.followup.send(f"❌ Failed to set bitrate: {e.text}", ephemeral=True)
-
-        elif choice == "Toggle LFG":
-            try:
-                if "[LFG]" in self.vc.name:
-                    new_name = self.vc.name.replace(" [LFG]", "")
-                    status = "removed from"
-                else:
-                    new_name = f"{self.vc.name} [LFG]"
-                    status = "added to"
-                
-                await self.vc.edit(name=new_name)
-                await interaction.response.send_message(f"✅ LFG tag **{status}** channel name.", ephemeral=True)
-                
-            except discord.HTTPException as e:
-                await interaction.response.send_message(f"❌ Failed to toggle LFG: {e.text}", ephemeral=True)
-
-
-class ChannelPermissionsDropdown(discord.ui.Select):
-    def __init__(self, vc, owner):
-        self.vc = vc
-        self.owner = owner
-        options = [
-            discord.SelectOption(label="Lock", description="Lock the channel"),
-            discord.SelectOption(label="Unlock", description="Unlock the channel"),
-            discord.SelectOption(label="Ghost", description="Hide from others"),
-            discord.SelectOption(label="Unghost", description="Make visible again")
-        ]
-        super().__init__(placeholder="🔒 Channel Permissions", options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        if interaction.user != self.owner:
-            return await interaction.response.send_message("❌ Only the owner can manage this VC.", ephemeral=True)
-
+    async def update_vc_embed(self, vc: discord.VoiceChannel):
+        tracked = self._tracked.get(str(vc.id))
+        if not tracked:
+            return
         try:
-            choice = self.values[0]
-            overwrite = self.vc.overwrites_for(interaction.guild.default_role)
-            
-            if choice == "Lock":
-                overwrite.connect = False
-                await self.vc.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("🔒 Channel locked. Only users with specific permissions can join.", ephemeral=True)
-                
-            elif choice == "Unlock":
-                overwrite.connect = None
-                await self.vc.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("🔓 Channel unlocked. Everyone can join now.", ephemeral=True)
-                
-            elif choice == "Ghost":
-                overwrite.view_channel = False
-                await self.vc.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("👻 Channel hidden from the channel list.", ephemeral=True)
-                
-            elif choice == "Unghost":
-                overwrite.view_channel = None
-                await self.vc.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("💫 Channel visible in the channel list again.", ephemeral=True)
-                
-        except discord.Forbidden:
-            await interaction.response.send_message("❌ I don't have permission to change channel permissions. Please check my role position and permissions.", ephemeral=True)
-        except discord.HTTPException as e:
-            await interaction.response.send_message(f"❌ Failed to change permissions: {e.text}", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message("❌ An unexpected error occurred while changing permissions.", ephemeral=True)
-            logging.error(f"Error in permissions dropdown: {e}", exc_info=True)
+            guild = self.bot.get_guild(int(tracked["guild_id"]))
+            text_ch = guild.get_channel(int(tracked["text_channel_id"]))
+            if not text_ch:
+                return
+            msg = await text_ch.fetch_message(int(tracked["embed_message_id"]))
+            owner = guild.get_member(tracked["owner_id"])
+            if not owner:
+                owner = vc.guild.get_member(tracked["owner_id"]) or vc.guild.me
+            await msg.edit(embed=self._build_embed(vc, owner))
+        except Exception:
+            log.exception("Failed to update embed for VC %s", vc.id)
 
+    @tasks.loop(seconds=REFRESH_INTERVAL)
+    async def refresh_embeds(self):
+        # Update every tracked embed
+        to_remove = []
+        for vc_id, tracked in list(self._tracked.items()):
+            try:
+                guild = self.bot.get_guild(int(tracked["guild_id"]))
+                if not guild:
+                    to_remove.append(vc_id); continue
+                vc = guild.get_channel(int(vc_id))
+                if not vc:
+                    to_remove.append(vc_id); continue
+                await self.update_vc_embed(vc)
+            except Exception:
+                log.exception("Error while refreshing embeds")
+        # cleanup removed entries
+        for r in to_remove:
+            self._tracked.pop(r, None)
 
 async def setup(bot):
     await bot.add_cog(AutoVC(bot))

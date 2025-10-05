@@ -1,54 +1,49 @@
+import os
+import logging
+import asyncio
+from dotenv import load_dotenv
 import discord
 from discord.ext import commands
-import logging
-import os
-from dotenv import load_dotenv
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+log = logging.getLogger("bot")
 
-# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
+APPLICATION_ID = os.getenv("APPLICATION_ID")  # optional but helpful for command registration
 
-# Intents
 intents = discord.Intents.all()
-intents.message_content = True
-intents.members = True
-intents.voice_states = True
-intents.guilds = True
+bot = commands.Bot(command_prefix="!", intents=intents, application_id=int(APPLICATION_ID) if APPLICATION_ID else None)
 
-# Bot setup
-bot = commands.Bot(command_prefix="!", intents=intents)
+COGS = ["commands", "tickets", "twitch", "youtube", "autovc"]
+
+# Setup hook
+@bot.event
+async def setup_hook():
+    # Load cogs from cogs/ directory
+    for cog in COGS:
+        try:
+            await bot.load_extension(f"cogs.{cog}")
+            log.info(f"✅ Loaded cog: {cog}")
+        except Exception as e:
+            log.exception(f"❌ Failed to load cog {cog}: {e}")
+
+    # Sync commands globally
+    try:
+        synced = await bot.tree.sync()
+        log.info(f"📡 Commands globally synced ({len(synced)})")
+        for cmd in synced:
+            log.info(f"   • /{cmd.name} — {cmd.description or 'no desc'}")
+    except Exception as e:
+        log.exception(f"❌ Failed to sync commands: {e}")
 
 @bot.event
 async def on_ready():
-    logging.info(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
-    logging.info("🔄 Syncing slash commands...")
-    try:
-        synced = await bot.tree.sync()
-        logging.info(f"✅ Synced {len(synced)} slash commands.")
-    except Exception as e:
-        logging.error(f"❌ Error syncing commands: {e}")
-    logging.info("✅ Bot is ready and running!")
-
-# Load cogs
-async def load_cogs():
-    for cog in ["commands", "tickets", "twitch", "youtube", "autovc"]:
-        try:
-            await bot.load_extension(f"cogs.{cog}")
-            logging.info(f"✅ Loaded cog: {cog}")
-        except Exception as e:
-            logging.error(f"❌ Failed to load cog {cog}: {e}")
-
-async def main():
-    async with bot:
-        await load_cogs()
-        await bot.start(TOKEN)
+    log.info(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
+    log.info(f"Connected to {len(bot.guilds)} guild(s). Bot ready.")
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    if not TOKEN:
+        log.error("DISCORD_TOKEN missing in .env")
+        raise SystemExit("DISCORD_TOKEN required")
+    asyncio.run(bot.start(TOKEN))
