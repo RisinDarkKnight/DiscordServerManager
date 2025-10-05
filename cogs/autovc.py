@@ -60,7 +60,7 @@ class AutoVC(commands.Cog):
 
             logging.info(f"User joined join-to-create VC: {after.channel.name}")
             
-            # Create personal VC
+            # Create personal VC (public by default)
             category = after.channel.category
             
             user_vc = await category.create_voice_channel(
@@ -75,16 +75,18 @@ class AutoVC(commands.Cog):
             await member.move_to(user_vc)
             logging.info(f"Moved {member.display_name} to new VC")
 
-            # Send embed to the voice channel's built-in text chat
+            # Send embed to the voice channel's text chat
             try:
-                # Create a message in the voice channel's text chat
                 await self.send_vc_embed_to_voice_chat(user_vc, member)
                 logging.info(f"Sent embed to voice channel text chat")
             except Exception as e:
                 logging.error(f"Error sending embed to voice chat: {e}")
                 # Fallback: send to system channel if voice chat fails
                 if member.guild.system_channel:
-                    await self.send_vc_embed(member.guild.system_channel, member, user_vc)
+                    await member.guild.system_channel.send(
+                        f"✅ Created temporary voice channel: {user_vc.mention} for {member.mention}\n"
+                        f"Use the controls in the voice channel to customize it!"
+                    )
 
             # Delete VC when empty
             asyncio.create_task(self.monitor_vc(user_vc))
@@ -93,8 +95,8 @@ class AutoVC(commands.Cog):
         except Exception as e:
             logging.error(f"Error in on_voice_state_update: {e}", exc_info=True)
 
-    # Create Embed with Dropdowns
-    async def send_vc_embed(self, channel, owner, vc):
+    # Send embed to voice channel's text chat
+    async def send_vc_embed_to_voice_chat(self, vc, owner):
         # Get current channel state
         everyone_perms = vc.overwrites_for(vc.guild.default_role)
         is_locked = everyone_perms.connect is False
@@ -106,23 +108,31 @@ class AutoVC(commands.Cog):
         # Check if LFG is enabled
         lfg_status = "🟢 Enabled" if "[LFG]" in vc.name else "🔴 Disabled"
         
+        # Count current members
+        member_count = len(vc.members)
+        
         embed = discord.Embed(
-            title=f"🎙️ Voice Channel Controls",
+            title=f"🎙️ Voice Channel Control Panel",
             description=(
-                f"**Channel Owner:** {owner.mention}\n"
-                f"**Channel:** {vc.mention}\n\n"
-                "🎛️ **Use the dropdown menus below to customize your temporary voice channel.**\n"
-                "ℹ️ This channel will be automatically deleted when empty.\n\n"
-                "**📊 Current Settings:**\n"
-                f"├ **Name:** `{vc.name}`\n"
-                f"├ **User Limit:** `{vc.user_limit if vc.user_limit > 0 else 'Unlimited'}`\n"
-                f"├ **Bitrate:** `{bitrate_kbps} kbps`\n"
-                f"├ **LFG Tag:** {lfg_status}\n"
-                f"├ **Locked:** `{'🔒 Yes' if is_locked else '🔓 No'}`\n"
-                f"└ **Hidden:** `{'👻 Yes' if is_hidden else '👁️ No'}`\n\n"
-                "**⚡ Quick Actions:**\n"
-                "• Change settings using the dropdowns below\n"
-                "• Channel auto-deletes when everyone leaves"
+                f"**👤 Channel Owner:** {owner.mention}\n"
+                f"**🔊 This Channel:** {vc.mention}\n\n"
+                "🎛️ **Use the dropdown menus below to customize your voice channel.**\n"
+                "ℹ️ This channel will be deleted automatically when empty.\n\n"
+                "**📊 Current Channel Status:**\n"
+                f"├ **👥 Members:** `{member_count}`\n"
+                f"├ **📝 Name:** `{vc.name}`\n"
+                f"├ **🚪 User Limit:** `{vc.user_limit if vc.user_limit > 0 else 'Unlimited'}`\n"
+                f"├ **🎵 Bitrate:** `{bitrate_kbps} kbps`\n"
+                f"├ **🎯 LFG Tag:** {lfg_status}\n"
+                f"├ **🔒 Locked:** `{'🔒 Yes' if is_locked else '🔓 No'}`\n"
+                f"└ **👻 Hidden:** `{'👻 Yes' if is_hidden else '👁️ No'}`\n\n"
+                "**⚡ Quick Actions Available:**\n"
+                "• 📝 Change channel name\n"
+                "• 👥 Set user limit\n"
+                "• 🎚️ Adjust audio quality\n"
+                "• 🎯 Toggle LFG tag\n"
+                "• 🔒 Lock/unlock channel\n"
+                "• 👻 Hide/show channel"
             ),
             color=discord.Color.green() if not is_locked else discord.Color.red()
         )
@@ -132,36 +142,25 @@ class AutoVC(commands.Cog):
         embed.timestamp = discord.utils.utcnow()
 
         view = VCControlView(vc, owner)
-        await channel.send(embed=embed, view=view)
+        
+        # Send to voice channel's text chat
+        await vc.send(embed=embed, view=view)
 
-    # Delete VC and text channel when empty
-    async def monitor_vc(self, vc, text_channel):
+    # Delete VC when empty
+    async def monitor_vc(self, vc):
         await asyncio.sleep(5)
         while True:
             await asyncio.sleep(10)
             if len(vc.members) == 0:
                 try:
-                    # Delete voice channel first
                     await vc.delete()
                     logging.info(f"Deleted empty temporary VC: {vc.name}")
-                    
-                    # Delete text channel
-                    await text_channel.delete()
-                    logging.info(f"Deleted control text channel: {text_channel.name}")
                     break
-                    
                 except discord.NotFound:
-                    logging.info(f"VC {vc.name} or text channel was already deleted")
+                    logging.info(f"VC {vc.name} was already deleted")
                     break
                 except Exception as e:
-                    logging.error(f"Error deleting channels: {e}")
-                    
-                    # Try to delete text channel even if VC deletion fails
-                    try:
-                        await text_channel.delete()
-                        logging.info(f"Deleted text channel after VC error: {text_channel.name}")
-                    except:
-                        pass
+                    logging.error(f"Error deleting VC {vc.name}: {e}")
                     break
 
     # Update Embed Task
