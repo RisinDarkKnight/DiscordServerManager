@@ -92,7 +92,8 @@ class CommandsCog(commands.Cog):
         if guild_id not in config:
             config[guild_id] = {}
 
-        config[guild_id]["auto_vc_channel_id"] = channel.id
+        # Use the same key as in autovc.py for consistency
+        config[guild_id]["join_vc_id"] = channel.id
         save_config(config)
 
         embed = discord.Embed(
