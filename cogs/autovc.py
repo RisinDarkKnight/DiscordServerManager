@@ -1,3 +1,7 @@
+# Discord Auto Voice Channel Bot
+# Complete version with all requested features
+# Drop this into your cogs folder as autovc.py
+
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -36,7 +40,7 @@ class AutoVC(commands.Cog):
         cfg[gid]["join_vc_id"] = channel.id
         save_config(cfg)
         await interaction.response.send_message(
-            f"\u2705 Set {channel.mention} as the Join to Create VC.", ephemeral=True
+            f"✅ Set {channel.mention} as the Join to Create VC.", ephemeral=True
         )
 
     # Event listener for voice joins
@@ -63,10 +67,22 @@ class AutoVC(commands.Cog):
             # Create personal VC (public by default)
             category = after.channel.category
             
+            # Create voice channel with public permissions
             user_vc = await category.create_voice_channel(
                 name=f"{member.display_name}'s VC",
                 user_limit=0,
                 bitrate=64000
+            )
+            
+            # Explicitly set public permissions (everyone can see and join)
+            everyone_role = member.guild.default_role
+            await user_vc.set_permissions(
+                everyone_role,
+                view_channel=True,
+                connect=True,
+                speak=True,
+                stream=True,
+                use_voice_activation=True
             )
             
             logging.info(f"Created temporary VC: {user_vc.name}")
@@ -84,8 +100,7 @@ class AutoVC(commands.Cog):
                 # Fallback: send to system channel if voice chat fails
                 if member.guild.system_channel:
                     await member.guild.system_channel.send(
-                        f"\u2705 Created temporary voice channel: {user_vc.mention} for {member.mention}\
-"
+                        f"✅ Created temporary voice channel: {user_vc.mention} for {member.mention}\n"
                         f"Use the controls in the voice channel to customize it!"
                     )
 
@@ -107,60 +122,37 @@ class AutoVC(commands.Cog):
         bitrate_kbps = vc.bitrate // 1000
         
         # Check if LFG is enabled
-        lfg_status = "\ud83d\udfe2 Enabled" if "[LFG]" in vc.name else "\ud83d\udd34 Disabled"
+        lfg_status = "🟢 Enabled" if "[LFG]" in vc.name else "🔴 Disabled"
         
         # Count current members
         member_count = len(vc.members)
         
         embed = discord.Embed(
-            title=f"\ud83c\udf99\ufe0f Voice Channel Control Panel",
+            title=f"🎙️ Voice Channel Control Panel",
             description=(
-                f"**\ud83d\udc64 Channel Owner:** {owner.mention}\
-"
-                f"**\ud83d\udd0a This Channel:** {vc.mention}\
-\
-"
-                "\ud83c\udf9b\ufe0f **Use the dropdown menus below to customize your voice channel.**\
-"
-                "\u2139\ufe0f This channel will be deleted automatically when empty.\
-\
-"
-                "**\ud83d\udcca Current Channel Status:**\
-"
-                f"\u251c **\ud83d\udc65 Members:** `{member_count}`\
-"
-                f"\u251c **\ud83d\udcdd Name:** `{vc.name}`\
-"
-                f"\u251c **\ud83d\udeaa User Limit:** `{vc.user_limit if vc.user_limit > 0 else 'Unlimited'}`\
-"
-                f"\u251c **\ud83c\udfb5 Bitrate:** `{bitrate_kbps} kbps`\
-"
-                f"\u251c **\ud83c\udfaf LFG Tag:** {lfg_status}\
-"
-                f"\u251c **\ud83d\udd12 Locked:** `{'\ud83d\udd12 Yes' if is_locked else '\ud83d\udd13 No'}`\
-"
-                f"\u2514 **\ud83d\udc7b Hidden:** `{'\ud83d\udc7b Yes' if is_hidden else '\ud83d\udc41\ufe0f No'}`\
-\
-"
-                "**\u26a1 Quick Actions Available:**\
-"
-                "\u2022 \ud83d\udcdd Change channel name\
-"
-                "\u2022 \ud83d\udc65 Set user limit\
-"
-                "\u2022 \ud83c\udf9a\ufe0f Adjust audio quality\
-"
-                "\u2022 \ud83c\udfaf Toggle LFG tag\
-"
-                "\u2022 \ud83d\udd12 Lock/unlock channel\
-"
-                "\u2022 \ud83d\udc7b Hide/show channel\
-"
-                "\u2022 \u2705 Permit users/roles\
-"
-                "\u2022 \u274c Reject users/roles\
-"
-                "\u2022 \ud83d\udce7 Invite users"
+                f"**👤 Channel Owner:** {owner.mention}\n"
+                f"**🔊 This Channel:** {vc.mention}\n"
+                f"**🔓 Status:** `Public Channel - Everyone Can Join`\n\n"
+                "🎛️ **Use the dropdown menus below to customize your voice channel.**\n"
+                "ℹ️ This channel will be deleted automatically when empty.\n\n"
+                "**📊 Current Channel Status:**\n"
+                f"├ **👥 Members:** `{member_count}`\n"
+                f"├ **📝 Name:** `{vc.name}`\n"
+                f"├ **🚪 User Limit:** `{vc.user_limit if vc.user_limit > 0 else 'Unlimited'}`\n"
+                f"├ **🎵 Bitrate:** `{bitrate_kbps} kbps`\n"
+                f"├ **🎯 LFG Tag:** {lfg_status}\n"
+                f"├ **🔒 Locked:** `{'🔒 Yes' if is_locked else '🔓 No'}`\n"
+                f"└ **👻 Hidden:** `{'👻 Yes' if is_hidden else '👁️ No'}`\n\n"
+                "**⚡ Quick Actions Available:**\n"
+                "• 📝 Change channel name\n"
+                "• 👥 Set user limit\n"
+                "• 🎚️ Adjust audio quality\n"
+                "• 🎯 Toggle LFG tag\n"
+                "• 🔒 Lock/unlock channel\n"
+                "• 👻 Hide/show channel\n"
+                "• ✅ Permit users/roles\n"
+                "• ❌ Reject users/roles\n"
+                "• 📧 Invite users"
             ),
             color=discord.Color.from_str("#a700fa")
         )
@@ -196,6 +188,10 @@ class AutoVC(commands.Cog):
     async def refresh_status(self):
         pass  # reserved for future live embed updates
 
+
+# ───────────────────────────────
+# VC Controls View
+# ───────────────────────────────
 class VCControlView(discord.ui.View):
     def __init__(self, vc, owner):
         super().__init__(timeout=None)
@@ -209,23 +205,23 @@ class ChannelSettingsDropdown(discord.ui.Select):
         self.vc = vc
         self.owner = owner
         options = [
-            discord.SelectOption(label="Name", emoji="\ud83d\udcdd", description="Change the channel name"),
-            discord.SelectOption(label="Limit", emoji="\ud83d\udc65", description="Change the user limit"),
-            discord.SelectOption(label="Status", emoji="\ud83d\udcca", description="View current channel status"),
-            discord.SelectOption(label="LFG", emoji="\ud83c\udfaf", description="Toggle Looking for Game tag"),
-            discord.SelectOption(label="Bit rate", emoji="\ud83c\udfb5", description="Change the audio bitrate")
+            discord.SelectOption(label="Name", emoji="📝", description="Change the channel name"),
+            discord.SelectOption(label="Limit", emoji="👥", description="Change the user limit"),
+            discord.SelectOption(label="Status", emoji="📊", description="View current channel status"),
+            discord.SelectOption(label="LFG", emoji="🎯", description="Toggle Looking for Game tag"),
+            discord.SelectOption(label="Bit rate", emoji="🎵", description="Change the audio bitrate")
         ]
-        super().__init__(placeholder="\ud83c\udf9b\ufe0f Channel Settings", options=options)
+        super().__init__(placeholder="🎛️ Channel Settings", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user != self.owner:
-            return await interaction.response.send_message("\u274c Only the owner can edit this VC.", ephemeral=True)
+            return await interaction.response.send_message("❌ Only the owner can edit this VC.", ephemeral=True)
 
         choice = self.values[0]
         
         if choice == "Name":
             try:
-                await interaction.response.send_message("\ud83d\udcdd Enter the new channel name (or 'cancel' to abort):", ephemeral=True)
+                await interaction.response.send_message("📝 Enter the new channel name (or 'cancel' to abort):", ephemeral=True)
                 msg = await interaction.client.wait_for(
                     "message", 
                     check=lambda m: m.author == interaction.user and m.channel.id == interaction.channel.id,
@@ -233,22 +229,22 @@ class ChannelSettingsDropdown(discord.ui.Select):
                 )
                 
                 if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("\u274c Name change cancelled.", ephemeral=True)
+                    return await interaction.followup.send("❌ Name change cancelled.", ephemeral=True)
                 
                 if len(msg.content) > 100:
-                    return await interaction.followup.send("\u274c Channel name too long (max 100 characters).", ephemeral=True)
+                    return await interaction.followup.send("❌ Channel name too long (max 100 characters).", ephemeral=True)
                 
                 await self.vc.edit(name=msg.content)
-                await interaction.followup.send(f"\u2705 Channel renamed to **{msg.content}**.", ephemeral=True)
+                await interaction.followup.send(f"✅ Channel renamed to **{msg.content}**.", ephemeral=True)
                 
             except asyncio.TimeoutError:
-                await interaction.followup.send("\u274c Name change timed out.", ephemeral=True)
+                await interaction.followup.send("❌ Name change timed out.", ephemeral=True)
             except discord.HTTPException as e:
-                await interaction.followup.send(f"\u274c Failed to rename channel: {e.text}", ephemeral=True)
+                await interaction.followup.send(f"❌ Failed to rename channel: {e.text}", ephemeral=True)
 
         elif choice == "Limit":
             try:
-                await interaction.response.send_message("\ud83d\udc65 Enter a user limit (0-99, or 'cancel' to abort):", ephemeral=True)
+                await interaction.response.send_message("👥 Enter a user limit (0-99, or 'cancel' to abort):", ephemeral=True)
                 msg = await interaction.client.wait_for(
                     "message", 
                     check=lambda m: m.author == interaction.user and m.channel.id == interaction.channel.id,
@@ -256,22 +252,22 @@ class ChannelSettingsDropdown(discord.ui.Select):
                 )
                 
                 if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("\u274c Limit change cancelled.", ephemeral=True)
+                    return await interaction.followup.send("❌ Limit change cancelled.", ephemeral=True)
                 
                 limit = int(msg.content)
                 if limit < 0 or limit > 99:
-                    return await interaction.followup.send("\u274c Limit must be between 0-99.", ephemeral=True)
+                    return await interaction.followup.send("❌ Limit must be between 0-99.", ephemeral=True)
                 
                 await self.vc.edit(user_limit=limit)
                 limit_text = "Unlimited" if limit == 0 else str(limit)
-                await interaction.followup.send(f"\u2705 User limit set to **{limit_text}**.", ephemeral=True)
+                await interaction.followup.send(f"✅ User limit set to **{limit_text}**.", ephemeral=True)
                 
             except asyncio.TimeoutError:
-                await interaction.followup.send("\u274c Limit change timed out.", ephemeral=True)
+                await interaction.followup.send("❌ Limit change timed out.", ephemeral=True)
             except ValueError:
-                await interaction.followup.send("\u274c Invalid number. Please enter a number between 0-99.", ephemeral=True)
+                await interaction.followup.send("❌ Invalid number. Please enter a number between 0-99.", ephemeral=True)
             except discord.HTTPException as e:
-                await interaction.followup.send(f"\u274c Failed to set limit: {e.text}", ephemeral=True)
+                await interaction.followup.send(f"❌ Failed to set limit: {e.text}", ephemeral=True)
 
         elif choice == "Status":
             # Display current channel status
@@ -281,18 +277,13 @@ class ChannelSettingsDropdown(discord.ui.Select):
             bitrate_kbps = self.vc.bitrate // 1000
             
             status_embed = discord.Embed(
-                title="\ud83d\udcca Current Channel Status",
+                title="📊 Current Channel Status",
                 description=(
-                    f"**Channel:** {self.vc.name}\
-"
-                    f"**User Limit:** {self.vc.user_limit if self.vc.user_limit > 0 else 'Unlimited'}\
-"
-                    f"**Bitrate:** {bitrate_kbps} kbps\
-"
-                    f"**LFG Tag:** {'Enabled' if '[LFG]' in self.vc.name else 'Disabled'}\
-"
-                    f"**Locked:** {'Yes' if is_locked else 'No'}\
-"
+                    f"**Channel:** {self.vc.name}\n"
+                    f"**User Limit:** {self.vc.user_limit if self.vc.user_limit > 0 else 'Unlimited'}\n"
+                    f"**Bitrate:** {bitrate_kbps} kbps\n"
+                    f"**LFG Tag:** {'Enabled' if '[LFG]' in self.vc.name else 'Disabled'}\n"
+                    f"**Locked:** {'Yes' if is_locked else 'No'}\n"
                     f"**Hidden:** {'Yes' if is_hidden else 'No'}"
                 ),
                 color=discord.Color.from_str("#a700fa")
@@ -309,16 +300,15 @@ class ChannelSettingsDropdown(discord.ui.Select):
                     status = "added to"
                 
                 await self.vc.edit(name=new_name)
-                await interaction.response.send_message(f"\u2705 LFG tag **{status}** channel name.", ephemeral=True)
+                await interaction.response.send_message(f"✅ LFG tag **{status}** channel name.", ephemeral=True)
                 
             except discord.HTTPException as e:
-                await interaction.response.send_message(f"\u274c Failed to toggle LFG: {e.text}", ephemeral=True)
+                await interaction.response.send_message(f"❌ Failed to toggle LFG: {e.text}", ephemeral=True)
 
         elif choice == "Bit rate":
             try:
                 await interaction.response.send_message(
-                    "\ud83c\udfb5 Enter new bitrate in kbps (8-384, or 'cancel' to abort):\
-"
+                    "🎵 Enter new bitrate in kbps (8-384, or 'cancel' to abort):\n"
                     "*Recommended: 64kbps for normal quality, 128kbps for high quality*",
                     ephemeral=True
                 )
@@ -329,41 +319,41 @@ class ChannelSettingsDropdown(discord.ui.Select):
                 )
                 
                 if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("\u274c Bitrate change cancelled.", ephemeral=True)
+                    return await interaction.followup.send("❌ Bitrate change cancelled.", ephemeral=True)
                 
                 kbps = int(msg.content)
                 if kbps < 8 or kbps > 384:
-                    return await interaction.followup.send("\u274c Bitrate must be between 8-384 kbps.", ephemeral=True)
+                    return await interaction.followup.send("❌ Bitrate must be between 8-384 kbps.", ephemeral=True)
                 
                 bitrate = kbps * 1000
                 await self.vc.edit(bitrate=bitrate)
-                await interaction.followup.send(f"\u2705 Bitrate set to **{kbps} kbps**.", ephemeral=True)
+                await interaction.followup.send(f"✅ Bitrate set to **{kbps} kbps**.", ephemeral=True)
                 
             except asyncio.TimeoutError:
-                await interaction.followup.send("\u274c Bitrate change timed out.", ephemeral=True)
+                await interaction.followup.send("❌ Bitrate change timed out.", ephemeral=True)
             except ValueError:
-                await interaction.followup.send("\u274c Invalid number. Please enter a number between 8-384.", ephemeral=True)
+                await interaction.followup.send("❌ Invalid number. Please enter a number between 8-384.", ephemeral=True)
             except discord.HTTPException as e:
-                await interaction.followup.send(f"\u274c Failed to set bitrate: {e.text}", ephemeral=True)
+                await interaction.followup.send(f"❌ Failed to set bitrate: {e.text}", ephemeral=True)
 
 class ChannelPermissionsDropdown(discord.ui.Select):
     def __init__(self, vc, owner):
         self.vc = vc
         self.owner = owner
         options = [
-            discord.SelectOption(label="Lock", emoji="\ud83d\udd12", description="Lock the channel"),
-            discord.SelectOption(label="Unlock", emoji="\ud83d\udd13", description="Unlock the channel"),
-            discord.SelectOption(label="Permit", emoji="\u2705", description="Permit users/roles to access"),
-            discord.SelectOption(label="Reject", emoji="\u274c", description="Reject/kick users/roles"),
-            discord.SelectOption(label="Invite", emoji="\ud83d\udce7", description="Invite a user to join"),
-            discord.SelectOption(label="Ghost", emoji="\ud83d\udc7b", description="Make channel invisible"),
-            discord.SelectOption(label="Unghost", emoji="\ud83d\udc41\ufe0f", description="Make channel visible")
+            discord.SelectOption(label="Lock", emoji="🔒", description="Lock the channel"),
+            discord.SelectOption(label="Unlock", emoji="🔓", description="Unlock the channel"),
+            discord.SelectOption(label="Permit", emoji="✅", description="Permit users/roles to access"),
+            discord.SelectOption(label="Reject", emoji="❌", description="Reject/kick users/roles"),
+            discord.SelectOption(label="Invite", emoji="📧", description="Invite a user to join"),
+            discord.SelectOption(label="Ghost", emoji="👻", description="Make channel invisible"),
+            discord.SelectOption(label="Unghost", emoji="👁️", description="Make channel visible")
         ]
-        super().__init__(placeholder="\ud83d\udd12 Channel Permissions", options=options)
+        super().__init__(placeholder="🔒 Channel Permissions", options=options)
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user != self.owner:
-            return await interaction.response.send_message("\u274c Only the owner can manage this VC.", ephemeral=True)
+            return await interaction.response.send_message("❌ Only the owner can manage this VC.", ephemeral=True)
 
         try:
             choice = self.values[0]
@@ -372,17 +362,17 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 overwrite = self.vc.overwrites_for(self.vc.guild.default_role)
                 overwrite.connect = False
                 await self.vc.set_permissions(self.vc.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("\ud83d\udd12 Channel locked. Only users with specific permissions can join.", ephemeral=True)
+                await interaction.response.send_message("🔒 Channel locked. Only users with specific permissions can join.", ephemeral=True)
                 
             elif choice == "Unlock":
                 overwrite = self.vc.overwrites_for(self.vc.guild.default_role)
                 overwrite.connect = None
                 await self.vc.set_permissions(self.vc.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("\ud83d\udd13 Channel unlocked. Everyone can join now.", ephemeral=True)
+                await interaction.response.send_message("🔓 Channel unlocked. Everyone can join now.", ephemeral=True)
                 
             elif choice == "Permit":
                 await interaction.response.send_message(
-                    "\u2705 Mention the user or role you want to permit (or 'cancel' to abort):",
+                    "✅ Mention the user or role you want to permit (or 'cancel' to abort):",
                     ephemeral=True
                 )
                 msg = await interaction.client.wait_for(
@@ -392,7 +382,7 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 )
                 
                 if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("\u274c Permit cancelled.", ephemeral=True)
+                    return await interaction.followup.send("❌ Permit cancelled.", ephemeral=True)
                 
                 # Parse mentions
                 if msg.role_mentions:
@@ -400,17 +390,17 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 elif msg.mentions:
                     target = msg.mentions[0]
                 else:
-                    return await interaction.followup.send("\u274c Please mention a valid user or role.", ephemeral=True)
+                    return await interaction.followup.send("❌ Please mention a valid user or role.", ephemeral=True)
                 
                 overwrite = self.vc.overwrites_for(target)
                 overwrite.connect = True
                 overwrite.view_channel = True
                 await self.vc.set_permissions(target, overwrite=overwrite)
-                await interaction.followup.send(f"\u2705 {target.mention} can now access this channel.", ephemeral=True)
+                await interaction.followup.send(f"✅ {target.mention} can now access this channel.", ephemeral=True)
                 
             elif choice == "Reject":
                 await interaction.response.send_message(
-                    "\u274c Mention the user or role you want to reject/kick (or 'cancel' to abort):",
+                    "❌ Mention the user or role you want to reject/kick (or 'cancel' to abort):",
                     ephemeral=True
                 )
                 msg = await interaction.client.wait_for(
@@ -420,7 +410,7 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 )
                 
                 if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("\u274c Reject cancelled.", ephemeral=True)
+                    return await interaction.followup.send("❌ Reject cancelled.", ephemeral=True)
                 
                 # Parse mentions
                 if msg.role_mentions:
@@ -428,7 +418,7 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 elif msg.mentions:
                     target = msg.mentions[0]
                 else:
-                    return await interaction.followup.send("\u274c Please mention a valid user or role.", ephemeral=True)
+                    return await interaction.followup.send("❌ Please mention a valid user or role.", ephemeral=True)
                 
                 # Kick existing members
                 for member in self.vc.members:
@@ -442,11 +432,11 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 overwrite = self.vc.overwrites_for(target)
                 overwrite.connect = False
                 await self.vc.set_permissions(target, overwrite=overwrite)
-                await interaction.followup.send(f"\u2705 {target.mention} has been rejected from this channel.", ephemeral=True)
+                await interaction.followup.send(f"✅ {target.mention} has been rejected from this channel.", ephemeral=True)
                 
             elif choice == "Invite":
                 await interaction.response.send_message(
-                    "\ud83d\udce7 Mention the user you want to invite (or 'cancel' to abort):",
+                    "📧 Mention the user you want to invite (or 'cancel' to abort):",
                     ephemeral=True
                 )
                 msg = await interaction.client.wait_for(
@@ -456,42 +446,41 @@ class ChannelPermissionsDropdown(discord.ui.Select):
                 )
                 
                 if msg.content.lower() == 'cancel':
-                    return await interaction.followup.send("\u274c Invite cancelled.", ephemeral=True)
+                    return await interaction.followup.send("❌ Invite cancelled.", ephemeral=True)
                 
                 if not msg.mentions:
-                    return await interaction.followup.send("\u274c Please mention a valid user.", ephemeral=True)
+                    return await interaction.followup.send("❌ Please mention a valid user.", ephemeral=True)
                 
                 target = msg.mentions[0]
                 
                 # Create invite link
                 try:
                     invite = await self.vc.create_invite(max_age=3600, max_uses=1, temporary=True)
-                    await target.send(f"\ud83d\udce7 You've been invited to join {self.vc.name}!\
-{invite.url}")
-                    await interaction.followup.send(f"\u2705 Invite sent to {target.mention}.", ephemeral=True)
+                    await target.send(f"📧 You've been invited to join {self.vc.name}!\n{invite.url}")
+                    await interaction.followup.send(f"✅ Invite sent to {target.mention}.", ephemeral=True)
                 except discord.Forbidden:
-                    await interaction.followup.send("\u274c I don't have permission to create invites or send DMs.", ephemeral=True)
+                    await interaction.followup.send("❌ I don't have permission to create invites or send DMs.", ephemeral=True)
                 except discord.HTTPException as e:
-                    await interaction.followup.send(f"\u274c Failed to send invite: {e.text}", ephemeral=True)
+                    await interaction.followup.send(f"❌ Failed to send invite: {e.text}", ephemeral=True)
                 
             elif choice == "Ghost":
                 overwrite = self.vc.overwrites_for(self.vc.guild.default_role)
                 overwrite.view_channel = False
                 await self.vc.set_permissions(self.vc.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("\ud83d\udc7b Channel hidden from the channel list.", ephemeral=True)
+                await interaction.response.send_message("👻 Channel hidden from the channel list.", ephemeral=True)
                 
             elif choice == "Unghost":
                 overwrite = self.vc.overwrites_for(self.vc.guild.default_role)
                 overwrite.view_channel = None
                 await self.vc.set_permissions(self.vc.guild.default_role, overwrite=overwrite)
-                await interaction.response.send_message("\ud83d\udc41\ufe0f Channel visible in the channel list again.", ephemeral=True)
+                await interaction.response.send_message("👁️ Channel visible in the channel list again.", ephemeral=True)
                 
         except discord.Forbidden:
-            await interaction.response.send_message("\u274c I don't have permission to change channel permissions. Please check my role position and permissions.", ephemeral=True)
+            await interaction.response.send_message("❌ I don't have permission to change channel permissions. Please check my role position and permissions.", ephemeral=True)
         except discord.HTTPException as e:
-            await interaction.response.send_message(f"\u274c Failed to change permissions: {e.text}", ephemeral=True)
+            await interaction.response.send_message(f"❌ Failed to change permissions: {e.text}", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message("\u274c An unexpected error occurred while changing permissions.", ephemeral=True)
+            await interaction.response.send_message("❌ An unexpected error occurred while changing permissions.", ephemeral=True)
             logging.error(f"Error in permissions dropdown: {e}", exc_info=True)
 
 
