@@ -93,7 +93,7 @@ class TicketPanelView(discord.ui.View):
 
         embed = discord.Embed(title=f"{pretty} Ticket",
                               description=f"{interaction.user.mention} — thank you for opening a **{pretty}** ticket. Staff will be with you shortly.",
-                              color=discord.Color.green())
+                              color=discord.Color.from_str("#a700fa"))
         view = discord.ui.View(timeout=None)
         close_btn = discord.ui.Button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
         view.add_item(close_btn)
@@ -198,7 +198,7 @@ class TicketsCog(commands.Cog):
                 "🔵 **Applications** – Apply for staff or content creator roles\n\n"
                 "Your report will be reviewed as soon as possible."
             ),
-            color=discord.Color.blurple()
+            color=discord.Color.from_str("#a700fa")
         )
         view = TicketPanelView(self.bot)
         await interaction.channel.send(embed=embed, view=view)

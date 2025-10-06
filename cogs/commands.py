@@ -26,7 +26,7 @@ class CommandsCog(commands.Cog):
         embed = discord.Embed(
             title="📜 Command List",
             description="Here are all available commands, sorted by category.\n\nUse `/help` anytime to see this again!",
-            color=discord.Color.blurple()
+            color=discord.Color.from_str("#a700fa")
         )
 
         embed.add_field(
@@ -99,7 +99,7 @@ class CommandsCog(commands.Cog):
         embed = discord.Embed(
             title="✅ Auto Voice Channel Set",
             description=f"The **Join to Create** voice channel has been set to {channel.mention}.",
-            color=discord.Color.green()
+            color=discord.Color.from_str("#a700fa")
         )
         embed.set_footer(text="Members who join this VC will automatically get their own temporary channels.")
         await interaction.response.send_message(embed=embed, ephemeral=True)

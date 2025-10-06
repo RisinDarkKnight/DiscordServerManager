@@ -115,7 +115,7 @@ class TwitchCog(commands.Cog):
                         game = stream.get("game_name") or "Unknown"
                         viewers = stream.get("viewer_count", 0)
                         thumb = stream.get("thumbnail_url", "").replace("{width}", "1280").replace("{height}", "720")
-                        embed = discord.Embed(title=title, url=f"https://twitch.tv/{username}", description=f"Playing **{game}** • {viewers} viewers", color=discord.Color.purple())
+                        embed = discord.Embed(title=title, url=f"https://twitch.tv/{username}", description=f"Playing **{game}** • {viewers} viewers", color=discord.Color.from_str("#8956FB"))
                         if thumb:
                             embed.set_image(url=thumb)
                         view = discord.ui.View()

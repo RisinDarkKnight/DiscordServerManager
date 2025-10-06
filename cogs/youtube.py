@@ -142,7 +142,7 @@ class YouTubeCog(commands.Cog):
                     last_vid = data.get(gid, {}).get("youtube", {}).get(raw, {}).get("last_video")
                     if last_vid == latest["id"]:
                         continue
-                    embed = discord.Embed(title=latest["title"], url=latest["url"], description=f"New upload from **{latest['channelTitle']}**", color=discord.Color.red())
+                    embed = discord.Embed(title=latest["title"], url=latest["url"], description=f"New upload from **{latest['channelTitle']}**", color=discord.Color.from_str("#fa0000"))
                     if latest.get("thumb"):
                         embed.set_image(url=latest["thumb"])
                     view = discord.ui.View()
