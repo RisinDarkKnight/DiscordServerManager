@@ -1,11 +1,14 @@
-import os, json, logging, asyncio
 import discord
 from discord.ext import commands
 from discord import app_commands
+import json
+import os
+import logging
 
 log = logging.getLogger("tickets_cog")
 CONFIG_FILE = "server_config.json"
 TICKETS_FILE = "tickets.json"
+PANEL_FILE = "ticket_panels.json"
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -37,7 +40,22 @@ def save_tickets(t):
     with open(TICKETS_FILE, "w", encoding="utf-8") as f:
         json.dump(t, f, indent=4)
 
-class TicketPanelView(discord.ui.View):
+def load_panels():
+    if not os.path.exists(PANEL_FILE):
+        with open(PANEL_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+    with open(PANEL_FILE, "r", encoding="utf-8") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            log.exception("Panels JSON corrupted")
+            return {}
+
+def save_panels(p):
+    with open(PANEL_FILE, "w", encoding="utf-8") as f:
+        json.dump(p, f, indent=4)
+
+class PersistentTicketPanelView(discord.ui.View):
     def __init__(self, bot: commands.Bot):
         super().__init__(timeout=None)
         self.bot = bot
@@ -47,8 +65,8 @@ class TicketPanelView(discord.ui.View):
         gid = str(interaction.guild.id)
         gcfg = cfg.get(gid, {})
         category_id = gcfg.get("ticket_category")
+        
         if not category_id:
-            # fallback to panel channel category (if saved)
             panel_chan_id = gcfg.get("ticket_panel_channel")
             if panel_chan_id:
                 panel_chan = interaction.guild.get_channel(panel_chan_id)
@@ -65,7 +83,6 @@ class TicketPanelView(discord.ui.View):
         tickets = load_tickets()
         guild_map = tickets.setdefault(gid, {})
 
-        # prevent opening multiple tickets by same user
         for ch_id, info in guild_map.items():
             if info.get("owner") == interaction.user.id:
                 existing = interaction.guild.get_channel(int(ch_id))
@@ -76,7 +93,6 @@ class TicketPanelView(discord.ui.View):
         overwrites = {interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False)}
         overwrites[interaction.user] = discord.PermissionOverwrite(view_channel=True, send_messages=True, attach_files=True, embed_links=True)
 
-        # staff roles
         staff_roles = gcfg.get("ticket_roles", [])
         for rid in staff_roles:
             role = interaction.guild.get_role(rid)
@@ -91,12 +107,16 @@ class TicketPanelView(discord.ui.View):
         guild_map[str(ticket_chan.id)] = {"owner": interaction.user.id, "type": key}
         save_tickets(tickets)
 
-        embed = discord.Embed(title=f"{pretty} Ticket",
-                              description=f"{interaction.user.mention} — thank you for opening a **{pretty}** ticket. Staff will be with you shortly.",
-                              color=discord.Color.from_str("#a700fa"))
+        embed = discord.Embed(
+            title=f"{pretty} Ticket",
+            description=f"{interaction.user.mention} — thank you for opening a **{pretty}** ticket. Staff will be with you shortly.",
+            color=discord.Color.from_str("#a700fa")
+        )
+        
         view = discord.ui.View(timeout=None)
         close_btn = discord.ui.Button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket_btn")
         view.add_item(close_btn)
+        
         await ticket_chan.send(embed=embed, view=view)
         await interaction.response.send_message(f"✅ Created ticket: {ticket_chan.mention}", ephemeral=True)
 
@@ -150,6 +170,40 @@ class TicketsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def cog_load(self):
+        """Restore ticket panels when the bot starts"""
+        await self.restore_ticket_panels()
+
+    async def restore_ticket_panels(self):
+        """Restore all ticket panels from persistent storage"""
+        panels = load_panels()
+        restored_count = 0
+        
+        for guild_id, panel_data in panels.items():
+            try:
+                guild = self.bot.get_guild(int(guild_id))
+                if not guild:
+                    continue
+                    
+                channel = guild.get_channel(panel_data["channel_id"])
+                if not channel:
+                    continue
+                
+                message = await channel.fetch_message(panel_data["message_id"])
+                if not message:
+                    continue
+                
+                # Restore the view with persistent components
+                view = PersistentTicketPanelView(self.bot)
+                await message.edit(view=view)
+                restored_count += 1
+                log.info(f"Restored ticket panel in {guild.name} (#{channel.name})")
+                
+            except Exception as e:
+                log.error(f"Failed to restore panel in guild {guild_id}: {e}")
+        
+        log.info(f"Successfully restored {restored_count} ticket panels")
+
     @app_commands.command(name="setticketcategory", description="Set category where tickets will be created (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def setticketcategory(self, interaction: discord.Interaction, category: discord.CategoryChannel):
@@ -200,39 +254,60 @@ class TicketsCog(commands.Cog):
             ),
             color=discord.Color.from_str("#a700fa")
         )
-        view = TicketPanelView(self.bot)
-        await interaction.channel.send(embed=embed, view=view)
-        # save panel channel for fallback category behavior
-        cfg = load_config()
+        
+        # Create the persistent view
+        view = PersistentTicketPanelView(self.bot)
+        
+        # Send the panel message
+        panel_msg = await interaction.channel.send(embed=embed, view=view)
+        
+        # Save panel information for persistence
+        panels = load_panels()
         gid = str(interaction.guild.id)
+        panels[gid] = {
+            "channel_id": interaction.channel_id,
+            "message_id": panel_msg.id,
+            "guild_id": interaction.guild.id
+        }
+        save_panels(panels)
+        
+        # Save panel channel for fallback
+        cfg = load_config()
         cfg.setdefault(gid, {})["ticket_panel_channel"] = interaction.channel_id
         save_config(cfg)
-        await interaction.response.send_message("✅ Ticket panel posted.", ephemeral=True)
+        
+        await interaction.response.send_message("✅ Ticket panel posted and will persist through bot restarts.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
-        # handle close button from ticket channels
+        """Handle ticket close button and other interactions"""
         if interaction.type != discord.InteractionType.component:
             return
+            
         cid = interaction.data.get("custom_id")
-        if cid != "close_ticket_btn":
-            return
-        chan = interaction.channel
-        tickets = load_tickets()
-        gid = str(chan.guild.id)
-        tmap = tickets.get(gid, {})
-        if str(chan.id) not in tmap:
-            await interaction.response.send_message("This channel is not a recognized ticket.", ephemeral=True)
-            return
-        owner = tmap[str(chan.id)]["owner"]
-        if interaction.user.id != owner and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You don't have permission to close this ticket.", ephemeral=True)
-            return
-        del tmap[str(chan.id)]
-        tickets[gid] = tmap
-        save_tickets(tickets)
-        await interaction.response.send_message("✅ Closing ticket...", ephemeral=True)
-        await chan.delete()
+        
+        # Handle close ticket button
+        if cid == "close_ticket_btn":
+            chan = interaction.channel
+            tickets = load_tickets()
+            gid = str(chan.guild.id)
+            tmap = tickets.get(gid, {})
+            
+            if str(chan.id) not in tmap:
+                await interaction.response.send_message("This channel is not a recognized ticket.", ephemeral=True)
+                return
+                
+            owner = tmap[str(chan.id)]["owner"]
+            if interaction.user.id != owner and not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message("You don't have permission to close this ticket.", ephemeral=True)
+                return
+                
+            # Delete from tickets and close
+            del tmap[str(chan.id)]
+            tickets[gid] = tmap
+            save_tickets(tickets)
+            await interaction.response.send_message("✅ Closing ticket...", ephemeral=True)
+            await chan.delete()
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(TicketsCog(bot))
