@@ -171,29 +171,29 @@ class TicketPanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.ticket_cog = ticket_cog
 
-    @discord.ui.button(label="General Support", style=discord.ButtonStyle.primary, emoji="🔵", custom_id="ticket_general_support", row=0)
+    @discord.ui.button(label="General Support", style=discord.ButtonStyle.primary, emoji="🔧", custom_id="ticket_general_support", row=0)
     async def general_support(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_type = {"name": "General Support", "type": "general_support", "emoji": "🔵"}
+        ticket_type = {"name": "General Support", "type": "general_support", "emoji": "🔧"}
         await self.ticket_cog.handle_ticket_button(interaction, ticket_type)
 
-    @discord.ui.button(label="Bug Reports", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="ticket_bug_report", row=0)
+    @discord.ui.button(label="Bug Reports", style=discord.ButtonStyle.danger, emoji="🐛", custom_id="ticket_bug_report", row=0)
     async def bug_report(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_type = {"name": "Bug Report", "type": "bug_report", "emoji": "🔴"}
+        ticket_type = {"name": "Bug Report", "type": "bug_report", "emoji": "🐛"}
         await self.ticket_cog.handle_ticket_button(interaction, ticket_type)
 
-    @discord.ui.button(label="Player Reports", style=discord.ButtonStyle.secondary, emoji="⚪", custom_id="ticket_player_report", row=1)
+    @discord.ui.button(label="Player Reports", style=discord.ButtonStyle.secondary, emoji="⚠️", custom_id="ticket_player_report", row=1)
     async def player_report(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_type = {"name": "Player Report", "type": "player_report", "emoji": "⚪"}
+        ticket_type = {"name": "Player Report", "type": "player_report", "emoji": "⚠️"}
         await self.ticket_cog.handle_ticket_button(interaction, ticket_type)
 
-    @discord.ui.button(label="Feedback & Suggestions", style=discord.ButtonStyle.success, emoji="🟢", custom_id="ticket_feedback", row=1)
+    @discord.ui.button(label="Feedback & Suggestions", style=discord.ButtonStyle.success, emoji="💡", custom_id="ticket_feedback", row=1)
     async def feedback(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_type = {"name": "Feedback & Suggestions", "type": "feedback", "emoji": "🟢"}
+        ticket_type = {"name": "Feedback & Suggestions", "type": "feedback", "emoji": "💡"}
         await self.ticket_cog.handle_ticket_button(interaction, ticket_type)
 
-    @discord.ui.button(label="Applications", style=discord.ButtonStyle.primary, emoji="🔵", custom_id="ticket_application", row=2)
+    @discord.ui.button(label="Applications", style=discord.ButtonStyle.primary, emoji="📝", custom_id="ticket_application", row=2)
     async def application(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_type = {"name": "Applications", "type": "application", "emoji": "🔵"}
+        ticket_type = {"name": "Applications", "type": "application", "emoji": "📝"}
         await self.ticket_cog.handle_ticket_button(interaction, ticket_type)
 
 class TicketsApplicationsCog(commands.Cog):
@@ -533,13 +533,13 @@ class TicketsApplicationsCog(commands.Cog):
     async def ticket_panel(self, interaction: discord.Interaction):
         """Create ticket panel"""
         embed = discord.Embed(
-            title="🔷 Support & Reports",
+            title="🎫 Support & Reports",
             description="Welcome to the support system — select the button below that best fits your reason for contacting staff.\n\n"
-                       "🔵 **General Support** - Questions & help\n"
-                       "🔴 **Bug Reports** - Report glitches or technical issues\n"
-                       "⚪ **Player Reports** - Report disruptive or rule-breaking players\n"
-                       "🟢 **Feedback & Suggestions** - Share ideas to improve the server\n"
-                       "🔵 **Applications** - Apply for staff or content creator roles\n\n"
+                       "🔧 **General Support** - Questions & help\n"
+                       "🐛 **Bug Reports** - Report glitches or technical issues\n"
+                       "⚠️ **Player Reports** - Report disruptive or rule-breaking players\n"
+                       "💡 **Feedback & Suggestions** - Share ideas to improve the server\n"
+                       "📝 **Applications** - Apply for staff or content creator roles\n\n"
                        "*Your report will be reviewed as soon as possible.*",
             color=discord.Color.from_str("#a700fa")
         )
