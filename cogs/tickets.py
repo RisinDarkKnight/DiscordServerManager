@@ -255,7 +255,7 @@ class TicketsApplicationsCog(commands.Cog):
         embed = discord.Embed(
             title=f"🎫 {ticket_type['name']} Application",
             description=f"**Applicant:** {user.mention}\n**Created:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            color=discord.Color.blue(),
+            color=discord.Color.from_str("#a700fa"),
             timestamp=datetime.now()
         )
         
@@ -490,7 +490,7 @@ class TicketsApplicationsCog(commands.Cog):
         embed = discord.Embed(
             title=panel_title,
             description=panel_description,
-            color=discord.Color.blue(),
+            color=discord.Color.from_str("#a700fa"),
             timestamp=datetime.now()
         )
         embed.set_footer(text="Click a button below to start your application")
@@ -523,7 +523,7 @@ class TicketsApplicationsCog(commands.Cog):
                        "`/set_ticket_archive_channel` - Set where resolved tickets are archived\n"
                        "`/add_support_role` - Add roles that can access tickets\n"
                        "`/set_ticket_notification_channel` - Set notification channel for new tickets",
-            color=discord.Color.blue()
+            color=discord.Color.from_str("#a700fa")
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -580,7 +580,7 @@ class TicketsApplicationsCog(commands.Cog):
             description=f"**Total Tickets:** {total}\n"
                        f"**Open Tickets:** {open_tickets}\n"
                        f"**Resolved Tickets:** {resolved_tickets}",
-            color=discord.Color.blue()
+            color=discord.Color.from_str("#a700fa")
         )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
