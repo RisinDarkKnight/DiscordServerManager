@@ -202,6 +202,11 @@ class TicketsApplicationsCog(commands.Cog):
         self.tickets = {}
         self.load_data()
         self.cleanup_tickets.start()
+        
+        # Register persistent views on bot startup
+        self.bot.add_view(TicketPanelView(self))
+        self.bot.add_view(ResolveTicketView(self, ""))  # Dummy for persistence
+        self.bot.add_view(ConfirmResolveView(self, ""))  # Dummy for persistence
 
     def load_data(self):
         """Load all ticket data"""
@@ -338,7 +343,7 @@ class TicketsApplicationsCog(commands.Cog):
         embed = discord.Embed(
             title=f"{ticket_type['emoji']} {ticket_type['name']}",
             description=f"**User:** {user.mention}\n**Ticket ID:** `{ticket_id}`\n**Status:** 🟡 Open",
-            color=discord.Color.from_str("#a700fa"),
+            color=discord.Color.blue(),
             timestamp=datetime.now()
         )
         
@@ -489,7 +494,7 @@ class TicketsApplicationsCog(commands.Cog):
         # Create archive embed
         embed = discord.Embed(
             title=f"📁 {ticket_data['emoji']} {ticket_data['type']} - Archived",
-            color=discord.Color.from_str("#a700fa"),
+            color=discord.Color.green(),
             timestamp=datetime.now()
         )
         
@@ -533,7 +538,7 @@ class TicketsApplicationsCog(commands.Cog):
     async def ticket_panel(self, interaction: discord.Interaction):
         """Create ticket panel"""
         embed = discord.Embed(
-            title="🎫 Support & Reports",
+            title="🔷 Support & Reports",
             description="Welcome to the support system — select the button below that best fits your reason for contacting staff.\n\n"
                        "🔧 **General Support** - Questions & help\n"
                        "🐛 **Bug Reports** - Report glitches or technical issues\n"
@@ -541,7 +546,7 @@ class TicketsApplicationsCog(commands.Cog):
                        "💡 **Feedback & Suggestions** - Share ideas to improve the server\n"
                        "📝 **Applications** - Apply for staff or content creator roles\n\n"
                        "*Your report will be reviewed as soon as possible.*",
-            color=discord.Color.from_str("#a700fa")
+            color=discord.Color.from_rgb(167, 0, 250)
         )
         
         view = TicketPanelView(self)
@@ -617,7 +622,7 @@ class TicketsApplicationsCog(commands.Cog):
         
         embed = discord.Embed(
             title="📊 Ticket Statistics",
-            color=discord.Color.from_str("#a700fa")
+            color=discord.Color.blue()
         )
         embed.add_field(name="Total Tickets", value=str(total), inline=True)
         embed.add_field(name="Open", value=f"🟡 {open_count}", inline=True)
