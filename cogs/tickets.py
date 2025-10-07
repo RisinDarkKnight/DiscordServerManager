@@ -210,13 +210,38 @@ class TicketsApplicationsCog(commands.Cog):
 
     def load_data(self):
         """Load all ticket data"""
-        self.tickets = load_json(TICKET_DATA_FILE, {"tickets": {}, "panels": {}})
+        loaded_data = load_json(TICKET_DATA_FILE, {"tickets": {}, "panels": {}})
+        
+        # Ensure the loaded data is a dictionary with the correct structure
+        if not isinstance(loaded_data, dict):
+            log.warning("Invalid ticket data format, resetting to default")
+            loaded_data = {"tickets": {}, "panels": {}}
+        
+        # Ensure required keys exist
+        if "tickets" not in loaded_data:
+            loaded_data["tickets"] = {}
+        if "panels" not in loaded_data:
+            loaded_data["panels"] = {}
+        
+        # Ensure tickets is a dict, not a list
+        if isinstance(loaded_data["tickets"], list):
+            log.warning("Tickets data is a list, converting to dict")
+            loaded_data["tickets"] = {}
+        
+        # Ensure panels is a dict
+        if isinstance(loaded_data["panels"], list):
+            log.warning("Panels data is a list, converting to dict")
+            loaded_data["panels"] = {}
+        
+        self.tickets = loaded_data
+        save_json(TICKET_DATA_FILE, self.tickets)
         
         # Restore persistent views
         for guild_id, panels in self.tickets.get("panels", {}).items():
-            for panel_id, panel_data in panels.items():
-                if "message_id" in panel_data:
-                    asyncio.create_task(self.restore_panel(guild_id, panel_id, panel_data))
+            if isinstance(panels, dict):
+                for panel_id, panel_data in panels.items():
+                    if isinstance(panel_data, dict) and "message_id" in panel_data:
+                        asyncio.create_task(self.restore_panel(guild_id, panel_id, panel_data))
 
     async def restore_panel(self, guild_id, panel_id, panel_data):
         """Restore a ticket panel after bot restart"""
@@ -249,13 +274,30 @@ class TicketsApplicationsCog(commands.Cog):
             now = datetime.now()
             expired_tickets = []
             
-            for ticket_id, ticket_data in self.tickets.get("tickets", {}).items():
-                if ticket_data.get("status") == "resolved":
-                    resolved_date = datetime.fromisoformat(ticket_data.get("resolved_date", ""))
-                    days_old = (now - resolved_date).days
+            # Ensure tickets is a dictionary
+            tickets_data = self.tickets.get("tickets", {})
+            if not isinstance(tickets_data, dict):
+                log.error("Tickets data is not a dictionary, skipping cleanup")
+                return
+            
+            for ticket_id, ticket_data in tickets_data.items():
+                if not isinstance(ticket_data, dict):
+                    continue
                     
-                    if days_old > 30:
-                        expired_tickets.append(ticket_id)
+                if ticket_data.get("status") == "resolved":
+                    resolved_date_str = ticket_data.get("resolved_date")
+                    if not resolved_date_str:
+                        continue
+                        
+                    try:
+                        resolved_date = datetime.fromisoformat(resolved_date_str)
+                        days_old = (now - resolved_date).days
+                        
+                        if days_old > 30:
+                            expired_tickets.append(ticket_id)
+                    except (ValueError, TypeError) as e:
+                        log.warning(f"Invalid date format for ticket {ticket_id}: {e}")
+                        continue
             
             for ticket_id in expired_tickets:
                 del self.tickets["tickets"][ticket_id]
