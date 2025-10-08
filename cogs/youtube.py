@@ -264,6 +264,8 @@ class YouTubeCog(commands.Cog):
                             url=latest["url"],  # Link to the video
                             icon_url=channel_info.get("thumbnail")
                         )
+                        # Add profile picture thumbnail on the left
+                        embed.set_thumbnail(url=channel_info.get("thumbnail"))
                     else:
                         embed.set_author(
                             name=f"{latest['channelTitle']} uploaded a new video",
