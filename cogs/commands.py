@@ -32,10 +32,12 @@ class CommandsCog(commands.Cog):
         embed.add_field(
             name="**Twitch**",
             value=(
-                "`/addstreamer <twitch_username>` — *(Admin)* Add a streamer to monitor.\n"
+                "`/addstreamer <twitch_username_or_url>` — *(Admin)* Add a streamer to monitor.\n"
                 "`/removestreamer` — *(Admin)* Remove a streamer (dropdown selection).\n"
                 "`/setstreamchannel <channel>` — *(Admin)* Set where stream notifications are sent.\n"
-                "`/setstreamnotifrole <role>` — *(Admin)* Set the role to ping for Twitch streams."
+                "`/setstreamnotifrole <role>` — *(Admin)* Set the role to ping for Twitch streams.\n"
+                "`/forcestreamercheck` — *(Admin)* Force check/repost the last stream for a streamer.\n"
+                "`/twitchstatus` — *(Admin)* Check Twitch configuration status."
             ),
             inline=False
         )
@@ -46,7 +48,9 @@ class CommandsCog(commands.Cog):
                 "`/addyoutuber <url_or_handle_or_id>` — *(Admin)* Add a YouTube channel to monitor.\n"
                 "`/removeyoutuber` — *(Admin)* Remove a YouTube channel (dropdown selection).\n"
                 "`/setyoutubechannel <channel>` — *(Admin)* Set the notification channel for YouTube uploads.\n"
-                "`/setyoutubenotifrole <role>` — *(Admin)* Set the role to ping for YouTube uploads."
+                "`/setyoutubenotifrole <role>` — *(Admin)* Set the role to ping for YouTube uploads.\n"
+                "`/forceyoutubecheck` — *(Admin)* Force check/repost the last video for a YouTube channel.\n"
+                "`/youtubestatus` — *(Admin)* Check YouTube configuration status."
             ),
             inline=False
         )

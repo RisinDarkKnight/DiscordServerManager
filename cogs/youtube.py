@@ -67,6 +67,21 @@ async def resolve_channel_id(raw: str):
                 d = await r.json()
                 if d.get("items"):
                     return d["items"][0]["snippet"]["channelId"]
+    
+    # Video URL - extract channel from video
+    m = re.search(r"youtube\.com\/watch\?v=([A-Za-z0-9_-]+)", raw)
+    if m and YOUTUBE_KEY:
+        video_id = m.group(1)
+        url = "https://www.googleapis.com/youtube/v3/videos"
+        params = {"part":"snippet","id":video_id,"key":YOUTUBE_KEY}
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, params=params) as r:
+                if r.status != 200:
+                    log.debug("YouTube video lookup failed: %s", await r.text())
+                    return None
+                d = await r.json()
+                if d.get("items"):
+                    return d["items"][0]["snippet"]["channelId"]
                     
     # Search by name
     if YOUTUBE_KEY:
@@ -159,7 +174,8 @@ async def fetch_latest_video(channel_id: str):
                 "channelTitle": snip.get("channelTitle"),
                 "channelId": snip.get("channelId"),
                 "url": f"https://youtube.com/watch?v={vid}",
-                "publishedAt": published_at
+                "publishedAt": published_at,
+                "description": snip.get("description", "")
             }
 
 class YouTubeCog(commands.Cog):
@@ -188,6 +204,92 @@ class YouTubeCog(commands.Cog):
             asyncio.create_task(self.session.close())
         except Exception:
             pass
+
+    def _format_timestamp(self, dt):
+        """Format timestamp for embed footer"""
+        return dt.strftime("Yesterday at %H:%M")
+
+    async def _send_video_notification(self, guild, channel, role, channel_id, latest, channel_info=None, force=False):
+        """Send a video notification with proper embed matching the design"""
+        try:
+            # Parse timestamp
+            try:
+                pub_time = datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
+                timestamp_str = self._format_timestamp(pub_time)
+            except:
+                timestamp_str = "Yesterday at 04:00"
+            
+            # Create embed matching the YouTube design from the image
+            embed = discord.Embed(
+                title=latest["title"], 
+                url=latest["url"], 
+                color=discord.Color.from_str("#FF0000")  # YouTube red
+            )
+            
+            # Add author (channel name + profile pic)
+            if channel_info:
+                embed.set_author(
+                    name=latest['channelTitle'],
+                    icon_url=channel_info.get("thumbnail")
+                )
+                # Add profile picture as thumbnail (top right)
+                embed.set_thumbnail(url=channel_info.get("thumbnail"))
+            else:
+                embed.set_author(name=latest['channelTitle'])
+            
+            # Add description matching the format
+            embed.description = f"{latest['channelTitle']} published a video on YouTube!"
+            
+            # Add video description as a field if available
+            if latest.get("description"):
+                # Truncate description to fit Discord limits
+                desc = latest["description"][:200] + "..." if len(latest["description"]) > 200 else latest["description"]
+                embed.add_field(name="Description", value=desc, inline=False)
+            
+            # Add video thumbnail as main image
+            if latest.get("thumb"):
+                embed.set_image(url=latest["thumb"])
+            
+            # Add footer with YouTube branding and timestamp
+            embed.set_footer(
+                text=f"YouTube • {timestamp_str}",
+                icon_url="https://www.youtube.com/s/desktop/f506bd45/img/favicon_32.png"
+            )
+                
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(
+                label="Watch Video", 
+                url=latest["url"], 
+                emoji="▶️",
+                style=discord.ButtonStyle.link
+            ))
+            
+            mention = role.mention if role else ""
+            content = f"{latest['channelTitle']} just uploaded a new video {mention}"
+            
+            # Check bot permissions before sending
+            perms = channel.permissions_for(guild.me)
+            if not perms.send_messages:
+                log.error("No send_messages permission in channel %s", channel.name)
+                return False
+            if not perms.embed_links:
+                log.error("No embed_links permission in channel %s", channel.name)
+                # Send without embed
+                await channel.send(content=f"{content}\n{latest['url']}")
+                return True
+                
+            await channel.send(content=content, embed=embed, view=view)
+            log.info("Sent YouTube notification for %s in guild %s", latest["channelTitle"], guild.id)
+            return True
+        except discord.Forbidden:
+            log.error("Forbidden to send YouTube notification in guild %s channel %s", guild.id, channel.id)
+            return False
+        except discord.HTTPException as e:
+            log.error("HTTP error sending YouTube notification: %s", e)
+            return False
+        except Exception as e:
+            log.error("Unexpected error sending YouTube notification: %s", e)
+            return False
 
     @tasks.loop(seconds=POLL_SECONDS)
     async def check_uploads(self):
@@ -220,7 +322,6 @@ class YouTubeCog(commands.Cog):
                 continue
                 
             role = guild.get_role(role_id)
-            mention = role.mention if role else ""
             
             for raw, meta in list(channels.items()):
                 channel_id = meta.get("channel_id")
@@ -236,66 +337,21 @@ class YouTubeCog(commands.Cog):
                     channel_data = data.get(gid, {}).get("youtube", {}).get(raw, {})
                     last_vid = channel_data.get("last_video")
                     
+                    # Store the latest video data regardless of notification status
+                    data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(raw, {})["latest_video_data"] = latest
+                    changed = True
+                    
                     if last_vid == latest["id"]:
                         continue
                     
                     # Get channel info for profile picture
                     channel_info = await fetch_channel_info(channel_id)
                     
-                    # Parse timestamp
-                    try:
-                        pub_time = datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
-                        timestamp_str = pub_time.strftime("%d/%m/%Y %H:%M")
-                    except:
-                        timestamp_str = "Just now"
-                    
-                    # Create embed with author (profile pic and name)
-                    embed = discord.Embed(
-                        title=latest["title"], 
-                        url=latest["url"], 
-                        description=f"**{latest['channelTitle']}** just uploaded a new video!",
-                        color=discord.Color.from_str("#fa0000")
-                    )
-                    
-                    # Add author (channel name + profile pic) - LINKED
-                    if channel_info:
-                        embed.set_author(
-                            name=f"{latest['channelTitle']} uploaded a new video",
-                            url=latest["url"],  # Link to the video
-                            icon_url=channel_info.get("thumbnail")
-                        )
-                        # Add profile picture thumbnail on the left
-                        embed.set_thumbnail(url=channel_info.get("thumbnail"))
-                    else:
-                        embed.set_author(
-                            name=f"{latest['channelTitle']} uploaded a new video",
-                            url=latest["url"]  # Link to the video
-                        )
-                    
-                    # Add thumbnail
-                    if latest.get("thumb"):
-                        embed.set_image(url=latest["thumb"])
-                    
-                    # Add timestamp footer (just date/time)
-                    embed.set_footer(text=timestamp_str)
-                        
-                    view = discord.ui.View()
-                    view.add_item(discord.ui.Button(
-                        label="Watch Video", 
-                        url=latest["url"], 
-                        emoji="▶️",
-                        style=discord.ButtonStyle.link
-                    ))
-                    
-                    content = f"{latest['channelTitle']} just uploaded a new video {mention}"
-                    try:
-                        await notif_channel.send(content=content, embed=embed, view=view)
-                        log.info("Sent YouTube notification for %s in guild %s", raw, gid)
-                    except discord.Forbidden:
-                        log.exception("Forbidden to send YouTube notification in guild %s channel %s", gid, notif_channel_id)
-                        
-                    data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(raw, {})["last_video"] = latest["id"]
-                    changed = True
+                    # Send notification
+                    success = await self._send_video_notification(guild, notif_channel, role, channel_id, latest, channel_info)
+                    if success:
+                        data[gid]["youtube"][raw]["last_video"] = latest["id"]
+                        changed = True
                 except Exception:
                     log.exception("Error checking YouTube entry %s for guild %s", raw, gid)
                     
@@ -314,17 +370,22 @@ class YouTubeCog(commands.Cog):
         cfg = load_json(CONFIG_FILE)
         ycfg = cfg.get(gid, {}).get("youtube", {})
         
-        channels = list(ycfg.get("channels", {}).keys())
+        channels = ycfg.get("channels", {})
         channel_id = ycfg.get("notif_channel")
         role_id = ycfg.get("notif_role")
         
         channel = interaction.guild.get_channel(channel_id) if channel_id else None
         role = interaction.guild.get_role(role_id) if role_id else None
         
-        embed = discord.Embed(title="YouTube Configuration Status", color=discord.Color.from_str("#fa0000"))
+        embed = discord.Embed(title="YouTube Configuration Status", color=discord.Color.from_str("#FF0000"))
         
         if channels:
-            embed.add_field(name="Tracked Channels", value="\n".join(f"• {c}" for c in channels), inline=False)
+            channel_list = []
+            for raw, meta in channels.items():
+                channel_name = meta.get("channel_name", "Unknown")
+                channel_id = meta.get("channel_id", "Unknown")
+                channel_list.append(f"• {channel_name} (`{channel_id}`)")
+            embed.add_field(name="Tracked Channels", value="\n".join(channel_list), inline=False)
         else:
             embed.add_field(name="Tracked Channels", value="None configured", inline=False)
             
@@ -340,15 +401,18 @@ class YouTubeCog(commands.Cog):
 
     # Commands
     @app_commands.command(name="addyoutuber", description="Add a YouTube channel (url/handle/id) to track (admin)")
+    @app_commands.describe(raw="YouTube channel URL, handle, or ID")
     @app_commands.checks.has_permissions(administrator=True)
     async def addyoutuber(self, interaction: discord.Interaction, raw: str):
+        await interaction.response.defer(ephemeral=True)
+        
         gid = str(interaction.guild_id)
         cfg = load_json(CONFIG_FILE)
         cfg.setdefault(gid, {}).setdefault("youtube", {}).setdefault("channels", {})
         
         channel_id = await resolve_channel_id(raw)
         if not channel_id:
-            await interaction.response.send_message("❌ Could not resolve a channel ID from input.", ephemeral=True)
+            await interaction.followup.send("❌ Could not resolve a channel ID from input. Please provide a valid YouTube channel URL, handle, or ID.", ephemeral=True)
             return
             
         # Check if already tracked
@@ -359,36 +423,59 @@ class YouTubeCog(commands.Cog):
                 break
                 
         if existing:
-            await interaction.response.send_message(f"❌ This channel is already tracked as `{existing}`", ephemeral=True)
+            await interaction.followup.send(f"❌ This channel is already tracked as `{existing}`", ephemeral=True)
             return
+        
+        # Get channel info to store display name
+        channel_info = await fetch_channel_info(channel_id)
+        channel_name = "Unknown"
+        if channel_info:
+            channel_name = channel_info.get("title", "Unknown")
             
-        cfg[gid]["youtube"]["channels"][raw] = {"channel_id": channel_id}
+        cfg[gid]["youtube"]["channels"][raw] = {
+            "channel_id": channel_id,
+            "channel_name": channel_name
+        }
         save_json(CONFIG_FILE, cfg)
         
         data = load_json(DATA_FILE)
         data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(raw, {})["last_video"] = None
         save_json(DATA_FILE, data)
         
-        await interaction.response.send_message(f"✅ Now tracking YouTube `{raw}` (id: {channel_id})", ephemeral=True)
+        await interaction.followup.send(f"✅ Now tracking YouTube channel `{channel_name}` (ID: {channel_id})", ephemeral=True)
 
     @app_commands.command(name="removeyoutuber", description="Remove a tracked YouTube entry (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def removeyoutuber(self, interaction: discord.Interaction):
         gid = str(interaction.guild_id)
         cfg = load_json(CONFIG_FILE)
-        channels = list(cfg.get(gid, {}).get("youtube", {}).get("channels", {}).keys())
+        channels = cfg.get(gid, {}).get("youtube", {}).get("channels", {})
         
         if not channels:
             await interaction.response.send_message("No YouTube channels tracked for this server.", ephemeral=True)
             return
             
-        options = [discord.SelectOption(label=c, value=c) for c in channels[:25]]
+        options = []
+        for raw, meta in channels.items():
+            channel_name = meta.get("channel_name", "Unknown")
+            channel_id = meta.get("channel_id", "Unknown")
+            options.append(discord.SelectOption(
+                label=channel_name[:100],  # Discord limits label length
+                description=f"ID: {channel_id[:100]}",  # Truncate if too long
+                value=raw
+            ))
+        
+        # Limit to 25 options (Discord max)
+        options = options[:25]
         
         class RemoveView(discord.ui.View):
-            @discord.ui.select(placeholder="Select YouTube to remove", options=options, min_values=1, max_values=1)
+            @discord.ui.select(placeholder="Select YouTube channel to remove", options=options, min_values=1, max_values=1)
             async def select_callback(inner_self, select_interaction: discord.Interaction, select):
                 chosen = select.values[0]
                 cfg_local = load_json(CONFIG_FILE)
+                
+                channel_name = cfg_local[gid]["youtube"]["channels"][chosen].get("channel_name", "Unknown")
+                
                 del cfg_local[gid]["youtube"]["channels"][chosen]
                 save_json(CONFIG_FILE, cfg_local)
                 
@@ -397,9 +484,9 @@ class YouTubeCog(commands.Cog):
                     del data[gid]["youtube"][chosen]
                     save_json(DATA_FILE, data)
                     
-                await select_interaction.response.edit_message(content=f"✅ Removed `{chosen}`", view=None)
+                await select_interaction.response.edit_message(content=f"✅ Removed YouTube channel `{channel_name}`", view=None)
                 
-        await interaction.response.send_message("Choose a YouTube entry to remove:", view=RemoveView(), ephemeral=True)
+        await interaction.response.send_message("Choose a YouTube channel to remove:", view=RemoveView(), ephemeral=True)
 
     @app_commands.command(name="setyoutubechannel", description="Set the channel for YouTube notifications (admin)")
     @app_commands.checks.has_permissions(administrator=True)
@@ -418,6 +505,89 @@ class YouTubeCog(commands.Cog):
         cfg.setdefault(gid, {}).setdefault("youtube", {})["notif_role"] = role.id
         save_json(CONFIG_FILE, cfg)
         await interaction.response.send_message(f"✅ YouTube notification role set to {role.mention}", ephemeral=True)
+
+    @app_commands.command(name="forceyoutubecheck", description="Force check and repost the last video for a YouTube channel (admin)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def forceyoutubecheck(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        cfg = load_json(CONFIG_FILE)
+        data = load_json(DATA_FILE)
+        gid = str(interaction.guild_id)
+        
+        channels = cfg.get(gid, {}).get("youtube", {}).get("channels", {})
+        
+        if not channels:
+            await interaction.followup.send("No YouTube channels tracked for this server.", ephemeral=True)
+            return
+            
+        options = []
+        for raw, meta in channels.items():
+            channel_name = meta.get("channel_name", "Unknown")
+            channel_id = meta.get("channel_id", "Unknown")
+            options.append(discord.SelectOption(
+                label=channel_name[:100],  # Discord limits label length
+                description=f"ID: {channel_id[:100]}",  # Truncate if too long
+                value=raw
+            ))
+        
+        # Limit to 25 options (Discord max)
+        options = options[:25]
+        
+        class ForceCheckView(discord.ui.View):
+            @discord.ui.select(placeholder="Select YouTube channel to check", options=options, min_values=1, max_values=1)
+            async def select_callback(inner_self, select_interaction: discord.Interaction, select):
+                chosen = select.values[0]
+                
+                await select_interaction.response.defer(ephemeral=True)
+                
+                # Get channel info
+                channel_id = cfg[gid]["youtube"]["channels"][chosen].get("channel_id")
+                channel_name = cfg[gid]["youtube"]["channels"][chosen].get("channel_name", "Unknown")
+                
+                if not channel_id:
+                    await select_interaction.followup.send(f"❌ No channel ID found for `{channel_name}`", ephemeral=True)
+                    return
+                
+                # Get notification channel and role
+                notif_channel_id = cfg.get(gid, {}).get("youtube", {}).get("notif_channel")
+                role_id = cfg.get(gid, {}).get("youtube", {}).get("notif_role")
+                
+                if not notif_channel_id:
+                    await select_interaction.followup.send("❌ No notification channel set for this server.", ephemeral=True)
+                    return
+                    
+                notif_channel = select_interaction.guild.get_channel(notif_channel_id)
+                if not notif_channel:
+                    await select_interaction.followup.send("❌ Notification channel not found.", ephemeral=True)
+                    return
+                    
+                role = select_interaction.guild.get_role(role_id) if role_id else None
+                
+                # Fetch latest video
+                latest = await fetch_latest_video(channel_id)
+                
+                if latest:
+                    # Get channel info for profile picture
+                    channel_info = await fetch_channel_info(channel_id)
+                    
+                    # Store the latest video data
+                    data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(chosen, {})["latest_video_data"] = latest
+                    save_json(DATA_FILE, data)
+                    
+                    # Send notification
+                    success = await self.bot.cogs["YouTubeCog"]._send_video_notification(
+                        select_interaction.guild, notif_channel, role, channel_id, latest, channel_info, force=True
+                    )
+                    
+                    if success:
+                        await select_interaction.followup.send(f"✅ Successfully sent video notification for `{channel_name}`", ephemeral=True)
+                    else:
+                        await select_interaction.followup.send(f"❌ Failed to send video notification for `{channel_name}`", ephemeral=True)
+                else:
+                    await select_interaction.followup.send(f"❌ Could not fetch latest video for `{channel_name}`", ephemeral=True)
+                
+        await interaction.followup.send("Choose a YouTube channel to force check:", view=ForceCheckView(), ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(YouTubeCog(bot))
