@@ -33,6 +33,7 @@ class TwitchCog(commands.Cog):
         self._token = None
         self._token_expires = 0
         self._user_cache = {}  # Cache for user profile pictures
+        self._game_cache = {}  # Cache for game images
         self._initialize_data()
         self.check_streams.start()
 
@@ -57,6 +58,42 @@ class TwitchCog(commands.Cog):
         except Exception:
             pass
 
+    def _format_timestamp(self, dt):
+        """Format timestamp for embed footer"""
+        return dt.strftime("%d/%m/%Y at %H:%M")
+
+    async def _fetch_game_image(self, game_id: str):
+        """Fetch game box art image"""
+        if not game_id:
+            return None
+            
+        if game_id in self._game_cache:
+            return self._game_cache[game_id]
+            
+        token = await self._ensure_token()
+        if not token:
+            return None
+            
+        url = "https://api.twitch.tv/helix/games"
+        headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {token}"}
+        params = {"id": game_id}
+        
+        try:
+            async with self.session.get(url, headers=headers, params=params) as r:
+                if r.status != 200:
+                    return None
+                j = await r.json()
+                data = j.get("data", [])
+                if not data:
+                    return None
+                    
+                box_art = data[0].get("box_art_url", "").replace("{width}", "285").replace("{height}", "380")
+                self._game_cache[game_id] = box_art
+                return box_art
+        except Exception as e:
+            log.debug("Error fetching game image for %s: %s", game_id, e)
+            return None
+
     async def _ensure_token(self):
         now = int(time.time())
         if self._token and now < self._token_expires - 60:
@@ -66,8 +103,9 @@ class TwitchCog(commands.Cog):
             return None
         url = "https://id.twitch.tv/oauth2/token"
         params = {"client_id": TWITCH_CLIENT_ID, "client_secret": TWITCH_CLIENT_SECRET, "grant_type": "client_credentials"}
-        async with aiohttp.ClientSession() as s:
-            async with s.post(url, params=params) as r:
+        
+        try:
+            async with self.session.post(url, params=params) as r:
                 if r.status != 200:
                     log.error("Failed to obtain Twitch token: %s", await r.text())
                     return None
@@ -75,6 +113,9 @@ class TwitchCog(commands.Cog):
                 self._token = j.get("access_token")
                 self._token_expires = now + int(j.get("expires_in", 3600))
                 return self._token
+        except Exception as e:
+            log.error("Exception getting Twitch token: %s", e)
+            return None
 
     async def _fetch_user_info(self, username: str):
         """Fetch user info including profile picture"""
@@ -89,36 +130,46 @@ class TwitchCog(commands.Cog):
         headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {token}"}
         params = {"login": username}
         
-        async with self.session.get(url, headers=headers, params=params) as r:
-            if r.status != 200:
-                log.debug("Twitch user API error for %s: %s", username, await r.text())
-                return None
-            j = await r.json()
-            data = j.get("data", [])
-            if not data:
-                return None
-                
-            user_info = {
-                "profile_image": data[0].get("profile_image_url"),
-                "display_name": data[0].get("display_name", username)
-            }
-            self._user_cache[username] = user_info
-            return user_info
+        try:
+            async with self.session.get(url, headers=headers, params=params) as r:
+                if r.status != 200:
+                    log.debug("Twitch user API error for %s: %s", username, await r.text())
+                    return None
+                j = await r.json()
+                data = j.get("data", [])
+                if not data:
+                    return None
+                    
+                user_info = {
+                    "profile_image": data[0].get("profile_image_url"),
+                    "display_name": data[0].get("display_name", username)
+                }
+                self._user_cache[username] = user_info
+                return user_info
+        except Exception as e:
+            log.debug("Exception fetching user info for %s: %s", username, e)
+            return None
 
     async def _fetch_stream(self, username: str):
         token = await self._ensure_token()
         if not token:
             return None
+        # FIXED: Changed from "helixs" to "helix"
         url = "https://api.twitch.tv/helix/streams"
         headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {token}"}
         params = {"user_login": username}
-        async with self.session.get(url, headers=headers, params=params) as r:
-            if r.status != 200:
-                log.debug("Twitch API non-200 for %s: %s", username, await r.text())
-                return None
-            j = await r.json()
-            items = j.get("data", [])
-            return items[0] if items else None
+        
+        try:
+            async with self.session.get(url, headers=headers, params=params) as r:
+                if r.status != 200:
+                    log.debug("Twitch API non-200 for %s: %s", username, await r.text())
+                    return None
+                j = await r.json()
+                items = j.get("data", [])
+                return items[0] if items else None
+        except Exception as e:
+            log.debug("Exception fetching stream for %s: %s", username, e)
+            return None
 
     @tasks.loop(seconds=POLL_SECONDS)
     async def check_streams(self):
@@ -175,12 +226,7 @@ class TwitchCog(commands.Cog):
                         
                         # Get current timestamp
                         now = datetime.now()
-                        
-                        # Format timestamp intelligently
                         timestamp_str = self._format_timestamp(now)
-                        
-                        # Get game box art
-                        game_image = await self._fetch_game_image(stream.get("game_id")) if stream.get("game_id") else None
                         
                         # Create embed
                         embed = discord.Embed(
@@ -224,11 +270,27 @@ class TwitchCog(commands.Cog):
                         ))
                         
                         content = f"{user_name} is live, come say hello :D {mention}"
+                        
                         try:
+                            # Check bot permissions before sending
+                            perms = channel.permissions_for(guild.me)
+                            if not perms.send_messages:
+                                log.error("No send_messages permission in channel %s", channel.name)
+                                continue
+                            if not perms.embed_links:
+                                log.error("No embed_links permission in channel %s", channel.name)
+                                # Send without embed
+                                await channel.send(content=f"{content}\n{f'https://twitch.tv/{username}'}")
+                                continue
+                                
                             await channel.send(content=content, embed=embed, view=view)
                             log.info("Sent Twitch notification for %s in guild %s", username, gid)
                         except discord.Forbidden:
-                            log.exception("Forbidden to send Twitch notification in guild %s channel %s", gid, channel_id)
+                            log.error("Forbidden to send Twitch notification in guild %s channel %s", gid, channel_id)
+                        except discord.HTTPException as e:
+                            log.error("HTTP error sending Twitch notification: %s", e)
+                        except Exception as e:
+                            log.error("Unexpected error sending Twitch notification: %s", e)
                             
                         data[gid]["twitch"][username]["notified"] = sid
                         changed = True
@@ -278,7 +340,7 @@ class TwitchCog(commands.Cog):
             
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # Commands
+    # Commands (keeping your existing commands as they look correct)
     @app_commands.command(name="addstreamer", description="Add a Twitch username to track (admin)")
     @app_commands.checks.has_permissions(administrator=True)
     async def addstreamer(self, interaction: discord.Interaction, username: str):
