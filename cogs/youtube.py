@@ -1,4 +1,5 @@
 import os, re, json, aiohttp, asyncio, logging
+from datetime import datetime
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -81,6 +82,35 @@ async def resolve_channel_id(raw: str):
                     return d["items"][0]["snippet"]["channelId"]
     return None
 
+async def fetch_channel_info(channel_id: str):
+    """Fetch channel information including profile picture"""
+    if not YOUTUBE_KEY:
+        return None
+        
+    url = "https://www.googleapis.com/youtube/v3/channels"
+    params = {
+        "part": "snippet",
+        "id": channel_id,
+        "key": YOUTUBE_KEY
+    }
+    
+    async with aiohttp.ClientSession() as s:
+        async with s.get(url, params=params) as r:
+            if r.status != 200:
+                log.debug("YouTube channel info failed: %s", await r.text())
+                return None
+            d = await r.json()
+            items = d.get("items", [])
+            if not items:
+                return None
+                
+            snippet = items[0]["snippet"]
+            return {
+                "title": snippet.get("title"),
+                "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url"),
+                "channel_url": f"https://youtube.com/channel/{channel_id}"
+            }
+
 async def fetch_latest_video(channel_id: str):
     """Fetch the latest video from a YouTube channel"""
     if not YOUTUBE_KEY:
@@ -118,13 +148,18 @@ async def fetch_latest_video(channel_id: str):
                 if quality in thumbs:
                     thumb = thumbs[quality].get("url")
                     break
-                    
+            
+            # Get publish date
+            published_at = snip.get("publishedAt", "")
+            
             return {
                 "id": vid,
                 "title": snip.get("title"),
                 "thumb": thumb,
                 "channelTitle": snip.get("channelTitle"),
-                "url": f"https://youtube.com/watch?v={vid}"
+                "channelId": snip.get("channelId"),
+                "url": f"https://youtube.com/watch?v={vid}",
+                "publishedAt": published_at
             }
 
 class YouTubeCog(commands.Cog):
@@ -156,7 +191,6 @@ class YouTubeCog(commands.Cog):
 
     @tasks.loop(seconds=POLL_SECONDS)
     async def check_uploads(self):
-        await self.bot.wait_until_ready()
         cfg = load_json(CONFIG_FILE)
         data = load_json(DATA_FILE)
         changed = False
@@ -197,24 +231,57 @@ class YouTubeCog(commands.Cog):
                     latest = await fetch_latest_video(channel_id)
                     if not latest:
                         continue
-                        
-                    last_vid = data.get(gid, {}).get("youtube", {}).get(raw, {}).get("last_video")
+                    
+                    # Get stored data for this channel
+                    channel_data = data.get(gid, {}).get("youtube", {}).get(raw, {})
+                    last_vid = channel_data.get("last_video")
+                    
                     if last_vid == latest["id"]:
                         continue
-                        
+                    
+                    # Get channel info for profile picture
+                    channel_info = await fetch_channel_info(channel_id)
+                    
+                    # Parse timestamp
+                    try:
+                        pub_time = datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
+                        timestamp_str = pub_time.strftime("%d/%m/%Y %H:%M")
+                    except:
+                        timestamp_str = "Just now"
+                    
+                    # Create embed with author (profile pic and name)
                     embed = discord.Embed(
                         title=latest["title"], 
                         url=latest["url"], 
-                        description=f"New upload from **{latest['channelTitle']}**", 
+                        description=f"**{latest['channelTitle']}** just uploaded a new video!",
                         color=discord.Color.from_str("#fa0000")
                     )
+                    
+                    # Add author (channel name + profile pic)
+                    if channel_info:
+                        embed.set_author(
+                            name=f"{latest['channelTitle']} uploaded a new video",
+                            url=channel_info["channel_url"],
+                            icon_url=channel_info.get("thumbnail")
+                        )
+                    else:
+                        embed.set_author(
+                            name=f"{latest['channelTitle']} uploaded a new video",
+                            url=f"https://youtube.com/channel/{channel_id}"
+                        )
+                    
+                    # Add thumbnail
                     if latest.get("thumb"):
                         embed.set_image(url=latest["thumb"])
+                    
+                    # Add timestamp footer
+                    embed.set_footer(text=f"streamcord.io • {timestamp_str}")
                         
                     view = discord.ui.View()
                     view.add_item(discord.ui.Button(
-                        label="▶ Watch Video", 
+                        label="Watch Video", 
                         url=latest["url"], 
+                        emoji="▶️",
                         style=discord.ButtonStyle.link
                     ))
                     
