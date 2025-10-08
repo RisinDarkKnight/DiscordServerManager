@@ -175,7 +175,12 @@ class TwitchCog(commands.Cog):
                         
                         # Get current timestamp
                         now = datetime.now()
-                        timestamp_str = now.strftime("%d/%m/%Y %H:%M")
+                        
+                        # Format timestamp intelligently
+                        timestamp_str = self._format_timestamp(now)
+                        
+                        # Get game box art
+                        game_image = await self._fetch_game_image(stream.get("game_id")) if stream.get("game_id") else None
                         
                         # Create embed
                         embed = discord.Embed(
@@ -191,6 +196,8 @@ class TwitchCog(commands.Cog):
                                 url=f"https://twitch.tv/{username}",
                                 icon_url=user_info.get("profile_image")
                             )
+                            # Add profile picture thumbnail on the left
+                            embed.set_thumbnail(url=user_info.get("profile_image"))
                         else:
                             embed.set_author(
                                 name=f"{user_name} is now live on Twitch!",
