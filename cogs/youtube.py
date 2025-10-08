@@ -1,5 +1,5 @@
 import os, re, json, aiohttp, asyncio, logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -185,6 +185,23 @@ class YouTubeCog(commands.Cog):
         self._initialize_data()
         self.check_uploads.start()
 
+    def _format_timestamp(self, dt: datetime):
+        """Format timestamp like 'Today at 21:50' or 'Yesterday at 21:50' or full date"""
+        now = datetime.now()
+        time_str = dt.strftime("%H:%M")
+        
+        # Check if today
+        if dt.date() == now.date():
+            return f"Today at {time_str}"
+        
+        # Check if yesterday
+        yesterday = (now - timedelta(days=1)).date()
+        if dt.date() == yesterday:
+            return f"Yesterday at {time_str}"
+        
+        # Otherwise full date
+        return dt.strftime("%d/%m/%Y %H:%M")
+
     def _initialize_data(self):
         """Initialize data structures for all configured guilds"""
         cfg = load_json(CONFIG_FILE)
@@ -205,10 +222,6 @@ class YouTubeCog(commands.Cog):
         except Exception:
             pass
 
-    def _format_timestamp(self, dt):
-        """Format timestamp for embed footer"""
-        return dt.strftime("Yesterday at %H:%M")
-
     async def _send_video_notification(self, guild, channel, role, channel_id, latest, channel_info=None, force=False):
         """Send a video notification with proper embed matching the design"""
         try:
@@ -217,40 +230,37 @@ class YouTubeCog(commands.Cog):
                 pub_time = datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
                 timestamp_str = self._format_timestamp(pub_time)
             except:
-                timestamp_str = "Yesterday at 04:00"
+                now = datetime.now()
+                timestamp_str = self._format_timestamp(now)
             
-            # Create embed matching the YouTube design from the image
+            # Create embed matching the YouTube design from the screenshot
             embed = discord.Embed(
                 title=latest["title"], 
                 url=latest["url"], 
                 color=discord.Color.from_str("#FF0000")  # YouTube red
             )
             
-            # Add author (channel name + profile pic)
+            # Add author (channel name only)
             if channel_info:
                 embed.set_author(
                     name=latest['channelTitle'],
                     icon_url=channel_info.get("thumbnail")
                 )
-                # Add profile picture as thumbnail (top right)
-                embed.set_thumbnail(url=channel_info.get("thumbnail"))
             else:
                 embed.set_author(name=latest['channelTitle'])
             
             # Add description matching the format
-            embed.description = f"{latest['channelTitle']} published a video on YouTube!"
+            embed.description = f"{latest['channelTitle']} uploaded a new video"
             
-            # Add video description as a field if available
-            if latest.get("description"):
-                # Truncate description to fit Discord limits
-                desc = latest["description"][:200] + "..." if len(latest["description"]) > 200 else latest["description"]
-                embed.add_field(name="Description", value=desc, inline=False)
+            # Add profile picture as thumbnail (left side)
+            if channel_info:
+                embed.set_thumbnail(url=channel_info.get("thumbnail"))
             
             # Add video thumbnail as main image
             if latest.get("thumb"):
                 embed.set_image(url=latest["thumb"])
             
-            # Add footer with YouTube branding and timestamp
+            # Add footer with YouTube logo and smart timestamp
             embed.set_footer(
                 text=f"YouTube • {timestamp_str}",
                 icon_url="https://www.youtube.com/s/desktop/f506bd45/img/favicon_32.png"
@@ -362,7 +372,6 @@ class YouTubeCog(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
-    # Status command to check YouTube setup
     @app_commands.command(name="youtubestatus", description="Check YouTube configuration status")
     @app_commands.checks.has_permissions(administrator=True)
     async def youtubestatus(self, interaction: discord.Interaction):
@@ -383,8 +392,8 @@ class YouTubeCog(commands.Cog):
             channel_list = []
             for raw, meta in channels.items():
                 channel_name = meta.get("channel_name", "Unknown")
-                channel_id = meta.get("channel_id", "Unknown")
-                channel_list.append(f"• {channel_name} (`{channel_id}`)")
+                ch_id = meta.get("channel_id", "Unknown")
+                channel_list.append(f"• {channel_name} (`{ch_id}`)")
             embed.add_field(name="Tracked Channels", value="\n".join(channel_list), inline=False)
         else:
             embed.add_field(name="Tracked Channels", value="None configured", inline=False)
@@ -399,7 +408,6 @@ class YouTubeCog(commands.Cog):
             
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # Commands
     @app_commands.command(name="addyoutuber", description="Add a YouTube channel (url/handle/id) to track (admin)")
     @app_commands.describe(raw="YouTube channel URL, handle, or ID")
     @app_commands.checks.has_permissions(administrator=True)
@@ -458,14 +466,13 @@ class YouTubeCog(commands.Cog):
         options = []
         for raw, meta in channels.items():
             channel_name = meta.get("channel_name", "Unknown")
-            channel_id = meta.get("channel_id", "Unknown")
+            ch_id = meta.get("channel_id", "Unknown")
             options.append(discord.SelectOption(
-                label=channel_name[:100],  # Discord limits label length
-                description=f"ID: {channel_id[:100]}",  # Truncate if too long
+                label=channel_name[:100],
+                description=f"ID: {ch_id[:100]}",
                 value=raw
             ))
         
-        # Limit to 25 options (Discord max)
         options = options[:25]
         
         class RemoveView(discord.ui.View):
@@ -524,14 +531,13 @@ class YouTubeCog(commands.Cog):
         options = []
         for raw, meta in channels.items():
             channel_name = meta.get("channel_name", "Unknown")
-            channel_id = meta.get("channel_id", "Unknown")
+            ch_id = meta.get("channel_id", "Unknown")
             options.append(discord.SelectOption(
-                label=channel_name[:100],  # Discord limits label length
-                description=f"ID: {channel_id[:100]}",  # Truncate if too long
+                label=channel_name[:100],
+                description=f"ID: {ch_id[:100]}",
                 value=raw
             ))
         
-        # Limit to 25 options (Discord max)
         options = options[:25]
         
         class ForceCheckView(discord.ui.View):
@@ -541,7 +547,6 @@ class YouTubeCog(commands.Cog):
                 
                 await select_interaction.response.defer(ephemeral=True)
                 
-                # Get channel info
                 channel_id = cfg[gid]["youtube"]["channels"][chosen].get("channel_id")
                 channel_name = cfg[gid]["youtube"]["channels"][chosen].get("channel_name", "Unknown")
                 
@@ -549,7 +554,6 @@ class YouTubeCog(commands.Cog):
                     await select_interaction.followup.send(f"❌ No channel ID found for `{channel_name}`", ephemeral=True)
                     return
                 
-                # Get notification channel and role
                 notif_channel_id = cfg.get(gid, {}).get("youtube", {}).get("notif_channel")
                 role_id = cfg.get(gid, {}).get("youtube", {}).get("notif_role")
                 
@@ -564,18 +568,14 @@ class YouTubeCog(commands.Cog):
                     
                 role = select_interaction.guild.get_role(role_id) if role_id else None
                 
-                # Fetch latest video
                 latest = await fetch_latest_video(channel_id)
                 
                 if latest:
-                    # Get channel info for profile picture
                     channel_info = await fetch_channel_info(channel_id)
                     
-                    # Store the latest video data
                     data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(chosen, {})["latest_video_data"] = latest
                     save_json(DATA_FILE, data)
                     
-                    # Send notification
                     success = await self.bot.cogs["YouTubeCog"]._send_video_notification(
                         select_interaction.guild, notif_channel, role, channel_id, latest, channel_info, force=True
                     )

@@ -1,5 +1,5 @@
 import os, time, json, aiohttp, asyncio, logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -60,9 +60,22 @@ class TwitchCog(commands.Cog):
         except Exception:
             pass
 
-    def _format_timestamp(self, dt):
-        """Format timestamp for embed footer"""
-        return dt.strftime("Yesterday at %H:%M")
+    def _format_timestamp(self, dt: datetime):
+        """Format timestamp like 'Today at 21:50' or 'Yesterday at 21:50' or full date"""
+        now = datetime.now()
+        time_str = dt.strftime("%H:%M")
+        
+        # Check if today
+        if dt.date() == now.date():
+            return f"Today at {time_str}"
+        
+        # Check if yesterday
+        yesterday = (now - timedelta(days=1)).date()
+        if dt.date() == yesterday:
+            return f"Yesterday at {time_str}"
+        
+        # Otherwise full date
+        return dt.strftime("%d/%m/%Y %H:%M")
 
     async def _fetch_game_image(self, game_id: str):
         """Fetch game box art image"""
@@ -197,35 +210,44 @@ class TwitchCog(commands.Cog):
             now = datetime.now()
             timestamp_str = self._format_timestamp(now)
             
-            # Create embed matching the Twitch design from the image
+            # Fetch game box art
+            game_image = None
+            if stream.get("game_id"):
+                game_image = await self._fetch_game_image(stream.get("game_id"))
+            
+            # Create embed matching the Twitch design from the screenshot
             embed = discord.Embed(
                 title=title, 
                 url=f"https://twitch.tv/{username}",
                 color=discord.Color.from_str("#9146FF")  # Twitch purple
             )
             
-            # Add author with profile picture and username
+            # Add author with username only
             if user_info:
                 embed.set_author(
                     name=user_name,
                     icon_url=user_info.get("profile_image")
                 )
-                # Add profile picture as thumbnail (top right)
-                embed.set_thumbnail(url=user_info.get("profile_image"))
             else:
                 embed.set_author(name=user_name)
             
             # Add description matching the format
             embed.description = f"{user_name} is now live on Twitch!"
             
-            # Add game as a field
+            # Add "Playing" field with game name
             embed.add_field(name="Playing", value=game, inline=False)
             
-            # Add stream thumbnail as main image
-            if thumb:
+            # Add profile picture as thumbnail (left side)
+            if user_info:
+                embed.set_thumbnail(url=user_info.get("profile_image"))
+            
+            # Add main image - prioritize game box art, fallback to stream thumbnail
+            if game_image:
+                embed.set_image(url=game_image)
+            elif thumb:
                 embed.set_image(url=thumb)
             
-            # Add footer with Twitch branding and timestamp
+            # Add footer with Twitch logo and smart timestamp
             embed.set_footer(
                 text=f"Twitch • {timestamp_str}",
                 icon_url="https://static-cdn.jtvnw.net/jtv_user_pictures/8a6381c7-d0c0-4576-b179-38bd5ce1d6af-profile_image-70x70.png"
