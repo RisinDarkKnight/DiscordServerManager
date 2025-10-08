@@ -319,7 +319,7 @@ class YouTubeCog(commands.Cog):
         channel = interaction.guild.get_channel(channel_id) if channel_id else None
         role = interaction.guild.get_role(role_id) if role_id else None
         
-        embed = discord.Embed(title="YouTube Configuration Status", color=discord.Color.red())
+        embed = discord.Embed(title="YouTube Configuration Status", color=discord.Color.from_str("#fa0000"))
         
         if channels:
             embed.add_field(name="Tracked Channels", value="\n".join(f"• {c}" for c in channels), inline=False)

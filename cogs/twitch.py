@@ -194,7 +194,7 @@ class TwitchCog(commands.Cog):
         channel = interaction.guild.get_channel(channel_id) if channel_id else None
         role = interaction.guild.get_role(role_id) if role_id else None
         
-        embed = discord.Embed(title="Twitch Configuration Status", color=discord.Color.purple())
+        embed = discord.Embed(title="Twitch Configuration Status", color=discord.Color.from_str("#8956FB"))
         
         if streamers:
             embed.add_field(name="Tracked Streamers", value="\n".join(f"• {s}" for s in streamers), inline=False)
