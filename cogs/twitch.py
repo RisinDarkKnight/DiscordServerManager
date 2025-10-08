@@ -1,4 +1,5 @@
 import os, time, json, aiohttp, asyncio, logging
+from datetime import datetime
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -31,6 +32,7 @@ class TwitchCog(commands.Cog):
         self.session = aiohttp.ClientSession()
         self._token = None
         self._token_expires = 0
+        self._user_cache = {}  # Cache for user profile pictures
         self._initialize_data()
         self.check_streams.start()
 
@@ -74,6 +76,35 @@ class TwitchCog(commands.Cog):
                 self._token_expires = now + int(j.get("expires_in", 3600))
                 return self._token
 
+    async def _fetch_user_info(self, username: str):
+        """Fetch user info including profile picture"""
+        if username in self._user_cache:
+            return self._user_cache[username]
+            
+        token = await self._ensure_token()
+        if not token:
+            return None
+            
+        url = "https://api.twitch.tv/helix/users"
+        headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {token}"}
+        params = {"login": username}
+        
+        async with self.session.get(url, headers=headers, params=params) as r:
+            if r.status != 200:
+                log.debug("Twitch user API error for %s: %s", username, await r.text())
+                return None
+            j = await r.json()
+            data = j.get("data", [])
+            if not data:
+                return None
+                
+            user_info = {
+                "profile_image": data[0].get("profile_image_url"),
+                "display_name": data[0].get("display_name", username)
+            }
+            self._user_cache[username] = user_info
+            return user_info
+
     async def _fetch_stream(self, username: str):
         token = await self._ensure_token()
         if not token:
@@ -91,7 +122,6 @@ class TwitchCog(commands.Cog):
 
     @tasks.loop(seconds=POLL_SECONDS)
     async def check_streams(self):
-        await self.bot.wait_until_ready()
         cfg = load_json(CONFIG_FILE)
         data = load_json(DATA_FILE)
         changed = False
@@ -133,26 +163,56 @@ class TwitchCog(commands.Cog):
                         sid = stream.get("id")
                         if meta.get("notified") == sid:
                             continue
-                            
+                        
+                        # Get user info for profile picture
+                        user_info = await self._fetch_user_info(username)
+                        
                         title = stream.get("title") or f"{stream.get('user_name', username)} is live!"
                         user_name = stream.get("user_name", username)
                         game = stream.get("game_name") or "Unknown"
                         viewers = stream.get("viewer_count", 0)
                         thumb = stream.get("thumbnail_url", "").replace("{width}", "1280").replace("{height}", "720")
                         
+                        # Get current timestamp
+                        now = datetime.now()
+                        timestamp_str = now.strftime("%d/%m/%Y %H:%M")
+                        
+                        # Create embed
                         embed = discord.Embed(
                             title=title, 
-                            url=f"https://twitch.tv/{username}", 
-                            description=f"Playing **{game}** • {viewers} viewers", 
+                            url=f"https://twitch.tv/{username}",
                             color=discord.Color.from_str("#8956FB")
                         )
+                        
+                        # Add author with profile picture - LINKED to stream
+                        if user_info:
+                            embed.set_author(
+                                name=f"{user_name} is now live on Twitch!",
+                                url=f"https://twitch.tv/{username}",
+                                icon_url=user_info.get("profile_image")
+                            )
+                        else:
+                            embed.set_author(
+                                name=f"{user_name} is now live on Twitch!",
+                                url=f"https://twitch.tv/{username}"
+                            )
+                        
+                        # Add game and viewers as fields
+                        embed.add_field(name="Game", value=game, inline=True)
+                        embed.add_field(name="Viewers", value=str(viewers), inline=True)
+                        
+                        # Add thumbnail
                         if thumb:
                             embed.set_image(url=thumb)
-                            
+                        
+                        # Add footer with just timestamp
+                        embed.set_footer(text=timestamp_str)
+                        
                         view = discord.ui.View()
                         view.add_item(discord.ui.Button(
-                            label="▶ Watch Stream", 
-                            url=f"https://twitch.tv/{username}", 
+                            label="Watch Stream", 
+                            url=f"https://twitch.tv/{username}",
+                            emoji="▶",
                             style=discord.ButtonStyle.link
                         ))
                         

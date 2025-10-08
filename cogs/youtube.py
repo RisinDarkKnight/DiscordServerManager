@@ -257,25 +257,25 @@ class YouTubeCog(commands.Cog):
                         color=discord.Color.from_str("#fa0000")
                     )
                     
-                    # Add author (channel name + profile pic)
+                    # Add author (channel name + profile pic) - LINKED
                     if channel_info:
                         embed.set_author(
                             name=f"{latest['channelTitle']} uploaded a new video",
-                            url=channel_info["channel_url"],
+                            url=latest["url"],  # Link to the video
                             icon_url=channel_info.get("thumbnail")
                         )
                     else:
                         embed.set_author(
                             name=f"{latest['channelTitle']} uploaded a new video",
-                            url=f"https://youtube.com/channel/{channel_id}"
+                            url=latest["url"]  # Link to the video
                         )
                     
                     # Add thumbnail
                     if latest.get("thumb"):
                         embed.set_image(url=latest["thumb"])
                     
-                    # Add timestamp footer
-                    embed.set_footer(text=f"streamcord.io • {timestamp_str}")
+                    # Add timestamp footer (just date/time)
+                    embed.set_footer(text=timestamp_str)
                         
                     view = discord.ui.View()
                     view.add_item(discord.ui.Button(
