@@ -131,52 +131,62 @@ async def fetch_latest_video(channel_id: str):
     if not YOUTUBE_KEY:
         log.warning("YouTube key missing; youtube features disabled")
         return None
-        
-    url = "https://www.googleapis.com/youtube/v3/search"
-    params = {
-        "part":"snippet",
-        "channelId":channel_id,
-        "order":"date",
-        "maxResults":1,
-        "type":"video",
-        "key":YOUTUBE_KEY
-    }
     
-    async with aiohttp.ClientSession() as s:
-        async with s.get(url, params=params) as r:
-            if r.status != 200:
-                log.debug("YouTube API non-200: %s", await r.text())
-                return None
-            d = await r.json()
-            items = d.get("items", [])
-            if not items:
-                return None
+    try:
+        url = "https://www.googleapis.com/youtube/v3/search"
+        params = {
+            "part":"snippet",
+            "channelId":channel_id,
+            "order":"date",
+            "maxResults":5,  # Get 5 videos to be sure we catch the latest
+            "type":"video",
+            "key":YOUTUBE_KEY
+        }
+        
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, params=params) as r:
+                if r.status != 200:
+                    error_text = await r.text()
+                    log.error("YouTube API error (status %d): %s", r.status, error_text)
+                    return None
+                d = await r.json()
+                items = d.get("items", [])
                 
-            v = items[0]
-            vid = v["id"]["videoId"]
-            snip = v["snippet"]
-            
-            # Get best thumbnail
-            thumb = None
-            thumbs = snip.get("thumbnails", {})
-            for quality in ["maxres", "high", "medium", "default"]:
-                if quality in thumbs:
-                    thumb = thumbs[quality].get("url")
-                    break
-            
-            # Get publish date
-            published_at = snip.get("publishedAt", "")
-            
-            return {
-                "id": vid,
-                "title": snip.get("title"),
-                "thumb": thumb,
-                "channelTitle": snip.get("channelTitle"),
-                "channelId": snip.get("channelId"),
-                "url": f"https://youtube.com/watch?v={vid}",
-                "publishedAt": published_at,
-                "description": snip.get("description", "")
-            }
+                if not items:
+                    log.warning("No videos found for channel %s", channel_id)
+                    return None
+                
+                # Get the most recent video (first item)
+                v = items[0]
+                vid = v["id"]["videoId"]
+                snip = v["snippet"]
+                
+                log.info("Found latest video: %s (ID: %s) for channel %s", snip.get("title"), vid, channel_id)
+                
+                # Get best thumbnail
+                thumb = None
+                thumbs = snip.get("thumbnails", {})
+                for quality in ["maxres", "high", "medium", "default"]:
+                    if quality in thumbs:
+                        thumb = thumbs[quality].get("url")
+                        break
+                
+                # Get publish date
+                published_at = snip.get("publishedAt", "")
+                
+                return {
+                    "id": vid,
+                    "title": snip.get("title"),
+                    "thumb": thumb,
+                    "channelTitle": snip.get("channelTitle"),
+                    "channelId": snip.get("channelId"),
+                    "url": f"https://youtube.com/watch?v={vid}",
+                    "publishedAt": published_at,
+                    "description": snip.get("description", "")
+                }
+    except Exception as e:
+        log.exception("Exception fetching latest video for channel %s: %s", channel_id, e)
+        return None
 
 class YouTubeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -303,9 +313,13 @@ class YouTubeCog(commands.Cog):
 
     @tasks.loop(seconds=POLL_SECONDS)
     async def check_uploads(self):
+        await self.bot.wait_until_ready()  # CRITICAL: Wait for bot first
+        
         cfg = load_json(CONFIG_FILE)
         data = load_json(DATA_FILE)
         changed = False
+        
+        log.info("YouTube check starting - checking %d guilds", len(cfg))
         
         # Ensure data structure exists for all configured guilds
         for gid in cfg.keys():
@@ -322,8 +336,12 @@ class YouTubeCog(commands.Cog):
             notif_channel_id = ycfg.get("notif_channel")
             role_id = ycfg.get("notif_role")
             
-            if not channels or not notif_channel_id or not role_id:
-                log.debug("YouTube config incomplete for guild %s", gid)
+            if not channels:
+                log.debug("No YouTube channels configured for guild %s", gid)
+                continue
+            
+            if not notif_channel_id or not role_id:
+                log.warning("YouTube config incomplete for guild %s - missing channel or role", gid)
                 continue
                 
             notif_channel = guild.get_channel(notif_channel_id)
@@ -333,15 +351,23 @@ class YouTubeCog(commands.Cog):
                 
             role = guild.get_role(role_id)
             
+            log.info("Checking %d YouTube channels for guild %s", len(channels), gid)
+            
             for raw, meta in list(channels.items()):
                 channel_id = meta.get("channel_id")
                 if not channel_id:
+                    log.warning("No channel_id for YouTube entry %s in guild %s", raw, gid)
                     continue
                     
                 try:
+                    log.info("Fetching latest video for channel %s (guild %s)", channel_id, gid)
                     latest = await fetch_latest_video(channel_id)
+                    
                     if not latest:
+                        log.warning("No videos found for channel %s in guild %s", channel_id, gid)
                         continue
+                    
+                    log.info("Found video: %s (ID: %s) for channel %s", latest.get("title"), latest.get("id"), channel_id)
                     
                     # Get stored data for this channel
                     channel_data = data.get(gid, {}).get("youtube", {}).get(raw, {})
@@ -352,21 +378,31 @@ class YouTubeCog(commands.Cog):
                     changed = True
                     
                     if last_vid == latest["id"]:
+                        log.info("Video %s already notified for channel %s, skipping", latest["id"], channel_id)
                         continue
+                    
+                    log.info("New video detected! Last: %s, Current: %s", last_vid, latest["id"])
                     
                     # Get channel info for profile picture
                     channel_info = await fetch_channel_info(channel_id)
                     
                     # Send notification
+                    log.info("Sending YouTube notification for %s in guild %s", latest["channelTitle"], gid)
                     success = await self._send_video_notification(guild, notif_channel, role, channel_id, latest, channel_info)
                     if success:
                         data[gid]["youtube"][raw]["last_video"] = latest["id"]
                         changed = True
-                except Exception:
-                    log.exception("Error checking YouTube entry %s for guild %s", raw, gid)
+                        log.info("✅ Successfully sent and recorded YouTube notification")
+                    else:
+                        log.error("❌ Failed to send YouTube notification")
+                except Exception as e:
+                    log.exception("Error checking YouTube entry %s for guild %s: %s", raw, gid, e)
                     
         if changed:
             save_json(DATA_FILE, data)
+            log.info("YouTube data saved successfully")
+        
+        log.info("YouTube check completed")
 
     @check_uploads.before_loop
     async def before_check(self):
