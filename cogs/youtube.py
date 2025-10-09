@@ -98,68 +98,92 @@ async def resolve_channel_id(raw: str):
     return None
 
 async def fetch_channel_info(channel_id: str):
-    """Fetch channel information including profile picture"""
+    """Fetch channel information including profile picture and uploads playlist ID"""
     if not YOUTUBE_KEY:
         return None
         
     url = "https://www.googleapis.com/youtube/v3/channels"
     params = {
-        "part": "snippet",
+        "part": "snippet,contentDetails",  # Added contentDetails to get uploads playlist
         "id": channel_id,
         "key": YOUTUBE_KEY
     }
     
-    async with aiohttp.ClientSession() as s:
-        async with s.get(url, params=params) as r:
-            if r.status != 200:
-                log.debug("YouTube channel info failed: %s", await r.text())
-                return None
-            d = await r.json()
-            items = d.get("items", [])
-            if not items:
-                return None
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, params=params) as r:
+                if r.status != 200:
+                    log.debug("YouTube channel info failed: %s", await r.text())
+                    return None
+                d = await r.json()
+                items = d.get("items", [])
+                if not items:
+                    return None
+                    
+                snippet = items[0]["snippet"]
+                content_details = items[0].get("contentDetails", {})
+                related_playlists = content_details.get("relatedPlaylists", {})
+                uploads_playlist_id = related_playlists.get("uploads")
                 
-            snippet = items[0]["snippet"]
-            return {
-                "title": snippet.get("title"),
-                "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url"),
-                "channel_url": f"https://youtube.com/channel/{channel_id}"
-            }
+                return {
+                    "title": snippet.get("title"),
+                    "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url"),
+                    "channel_url": f"https://youtube.com/channel/{channel_id}",
+                    "uploads_playlist_id": uploads_playlist_id
+                }
+    except Exception as e:
+        log.exception("Exception fetching channel info for %s: %s", channel_id, e)
+        return None
 
-async def fetch_latest_video(channel_id: str):
-    """Fetch the latest video from a YouTube channel"""
+async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
+    """Fetch the latest video from a YouTube channel using PlaylistItems (efficient!)"""
     if not YOUTUBE_KEY:
         log.warning("YouTube key missing; youtube features disabled")
         return None
     
     try:
-        url = "https://www.googleapis.com/youtube/v3/search"
+        # If we don't have the uploads playlist ID, fetch it first
+        if not uploads_playlist_id:
+            log.info("Fetching uploads playlist ID for channel %s", channel_id)
+            channel_info = await fetch_channel_info(channel_id)
+            if not channel_info:
+                log.error("Could not fetch channel info for %s", channel_id)
+                return None
+            uploads_playlist_id = channel_info.get("uploads_playlist_id")
+            if not uploads_playlist_id:
+                log.error("No uploads playlist found for channel %s", channel_id)
+                return None
+        
+        # Use PlaylistItems.list - MUCH MORE EFFICIENT (1 quota vs 100 quota for search)
+        url = "https://www.googleapis.com/youtube/v3/playlistItems"
         params = {
-            "part":"snippet",
-            "channelId":channel_id,
-            "order":"date",
-            "maxResults":5,  # Get 5 videos to be sure we catch the latest
-            "type":"video",
-            "key":YOUTUBE_KEY
+            "part": "snippet",
+            "playlistId": uploads_playlist_id,
+            "maxResults": 1,  # Just get the latest video
+            "key": YOUTUBE_KEY
         }
         
         async with aiohttp.ClientSession() as s:
             async with s.get(url, params=params) as r:
                 if r.status != 200:
                     error_text = await r.text()
-                    log.error("YouTube API error (status %d): %s", r.status, error_text)
+                    log.error("YouTube PlaylistItems API error (status %d): %s", r.status, error_text)
                     return None
                 d = await r.json()
                 items = d.get("items", [])
                 
                 if not items:
-                    log.warning("No videos found for channel %s", channel_id)
+                    log.warning("No videos found in uploads playlist for channel %s", channel_id)
                     return None
                 
                 # Get the most recent video (first item)
                 v = items[0]
-                vid = v["id"]["videoId"]
                 snip = v["snippet"]
+                vid = snip.get("resourceId", {}).get("videoId")
+                
+                if not vid:
+                    log.error("No video ID found in playlist item for channel %s", channel_id)
+                    return None
                 
                 log.info("Found latest video: %s (ID: %s) for channel %s", snip.get("title"), vid, channel_id)
                 
@@ -179,10 +203,11 @@ async def fetch_latest_video(channel_id: str):
                     "title": snip.get("title"),
                     "thumb": thumb,
                     "channelTitle": snip.get("channelTitle"),
-                    "channelId": snip.get("channelId"),
+                    "channelId": snip.get("channelId", channel_id),
                     "url": f"https://youtube.com/watch?v={vid}",
                     "publishedAt": published_at,
-                    "description": snip.get("description", "")
+                    "description": snip.get("description", ""),
+                    "uploads_playlist_id": uploads_playlist_id  # Store for future use
                 }
     except Exception as e:
         log.exception("Exception fetching latest video for channel %s: %s", channel_id, e)
@@ -355,17 +380,25 @@ class YouTubeCog(commands.Cog):
             
             for raw, meta in list(channels.items()):
                 channel_id = meta.get("channel_id")
+                uploads_playlist_id = meta.get("uploads_playlist_id")  # Check if we have it cached
+                
                 if not channel_id:
                     log.warning("No channel_id for YouTube entry %s in guild %s", raw, gid)
                     continue
                     
                 try:
                     log.info("Fetching latest video for channel %s (guild %s)", channel_id, gid)
-                    latest = await fetch_latest_video(channel_id)
+                    latest = await fetch_latest_video(channel_id, uploads_playlist_id)
                     
                     if not latest:
                         log.warning("No videos found for channel %s in guild %s", channel_id, gid)
                         continue
+                    
+                    # Cache the uploads playlist ID for future checks (saves quota!)
+                    if latest.get("uploads_playlist_id") and not uploads_playlist_id:
+                        cfg[gid]["youtube"]["channels"][raw]["uploads_playlist_id"] = latest["uploads_playlist_id"]
+                        save_json(CONFIG_FILE, cfg)
+                        log.info("Cached uploads playlist ID for channel %s", channel_id)
                     
                     log.info("Found video: %s (ID: %s) for channel %s", latest.get("title"), latest.get("id"), channel_id)
                     
@@ -470,15 +503,18 @@ class YouTubeCog(commands.Cog):
             await interaction.followup.send(f"❌ This channel is already tracked as `{existing}`", ephemeral=True)
             return
         
-        # Get channel info to store display name
+        # Get channel info to store display name and uploads playlist
         channel_info = await fetch_channel_info(channel_id)
         channel_name = "Unknown"
+        uploads_playlist_id = None
         if channel_info:
             channel_name = channel_info.get("title", "Unknown")
+            uploads_playlist_id = channel_info.get("uploads_playlist_id")
             
         cfg[gid]["youtube"]["channels"][raw] = {
             "channel_id": channel_id,
-            "channel_name": channel_name
+            "channel_name": channel_name,
+            "uploads_playlist_id": uploads_playlist_id  # Cache this to save quota!
         }
         save_json(CONFIG_FILE, cfg)
         
