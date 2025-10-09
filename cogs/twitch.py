@@ -241,11 +241,11 @@ class TwitchCog(commands.Cog):
             if user_info:
                 embed.set_thumbnail(url=user_info.get("profile_image"))
             
-            # Add main image - prioritize game box art, fallback to stream thumbnail
-            if game_image:
-                embed.set_image(url=game_image)
-            elif thumb:
+            # Add main image - prioritize thumbnail, fallback to game box art
+            if thumb:
                 embed.set_image(url=thumb)
+            elif game_image:
+                embed.set_image(url=game_image)
             
             # Add footer with Twitch logo and smart timestamp
             embed.set_footer(
