@@ -159,7 +159,7 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
         params = {
             "part": "snippet",
             "playlistId": uploads_playlist_id,
-            "maxResults": 1,  # Just get the latest video
+            "maxResults": 10,  # Get more videos to filter out live streams
             "key": YOUTUBE_KEY
         }
         
@@ -176,42 +176,105 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
                     log.warning("No videos found in uploads playlist for channel %s", channel_id)
                     return None
                 
-                # Get the most recent video (first item)
-                v = items[0]
-                snip = v["snippet"]
-                vid = snip.get("resourceId", {}).get("videoId")
+                # Find the first actual video (not a live stream)
+                for item in items:
+                    snip = item["snippet"]
+                    vid = snip.get("resourceId", {}).get("videoId")
+                    
+                    if not vid:
+                        continue
+                    
+                    # Check if this is a live stream by looking at the title/description
+                    title = snip.get("title", "").lower()
+                    
+                    # Skip if it's clearly a live stream indicator
+                    live_indicators = ["live stream", "livestream", "live now", "streaming now"]
+                    if any(indicator in title for indicator in live_indicators):
+                        log.info("Skipping live stream: %s (ID: %s)", snip.get("title"), vid)
+                        continue
+                    
+                    # Additional check: Fetch video details to confirm it's not live
+                    if not await is_actual_video(vid):
+                        log.info("Skipping non-video content: %s (ID: %s)", snip.get("title"), vid)
+                        continue
+                    
+                    log.info("Found latest video: %s (ID: %s) for channel %s", snip.get("title"), vid, channel_id)
+                    
+                    # Get best thumbnail
+                    thumb = None
+                    thumbs = snip.get("thumbnails", {})
+                    for quality in ["maxres", "high", "medium", "default"]:
+                        if quality in thumbs:
+                            thumb = thumbs[quality].get("url")
+                            break
+                    
+                    # Get publish date
+                    published_at = snip.get("publishedAt", "")
+                    
+                    return {
+                        "id": vid,
+                        "title": snip.get("title"),
+                        "thumb": thumb,
+                        "channelTitle": snip.get("channelTitle"),
+                        "channelId": snip.get("channelId", channel_id),
+                        "url": f"https://youtube.com/watch?v={vid}",
+                        "publishedAt": published_at,
+                        "description": snip.get("description", ""),
+                        "uploads_playlist_id": uploads_playlist_id  # Store for future use
+                    }
                 
-                if not vid:
-                    log.error("No video ID found in playlist item for channel %s", channel_id)
-                    return None
+                log.warning("No valid videos found (all were live streams) for channel %s", channel_id)
+                return None
                 
-                log.info("Found latest video: %s (ID: %s) for channel %s", snip.get("title"), vid, channel_id)
-                
-                # Get best thumbnail
-                thumb = None
-                thumbs = snip.get("thumbnails", {})
-                for quality in ["maxres", "high", "medium", "default"]:
-                    if quality in thumbs:
-                        thumb = thumbs[quality].get("url")
-                        break
-                
-                # Get publish date
-                published_at = snip.get("publishedAt", "")
-                
-                return {
-                    "id": vid,
-                    "title": snip.get("title"),
-                    "thumb": thumb,
-                    "channelTitle": snip.get("channelTitle"),
-                    "channelId": snip.get("channelId", channel_id),
-                    "url": f"https://youtube.com/watch?v={vid}",
-                    "publishedAt": published_at,
-                    "description": snip.get("description", ""),
-                    "uploads_playlist_id": uploads_playlist_id  # Store for future use
-                }
     except Exception as e:
         log.exception("Exception fetching latest video for channel %s: %s", channel_id, e)
         return None
+
+async def is_actual_video(video_id: str):
+    """Check if a video ID is an actual uploaded video (not a live stream)"""
+    if not YOUTUBE_KEY:
+        return True  # Assume it's a video if we can't check
+    
+    try:
+        url = "https://www.googleapis.com/youtube/v3/videos"
+        params = {
+            "part": "snippet,liveStreamingDetails",
+            "id": video_id,
+            "key": YOUTUBE_KEY
+        }
+        
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, params=params) as r:
+                if r.status != 200:
+                    log.debug("Could not verify video type for %s", video_id)
+                    return True  # Assume it's a video if check fails
+                
+                d = await r.json()
+                items = d.get("items", [])
+                if not items:
+                    return False
+                
+                video = items[0]
+                
+                # Check if it has live streaming details (indicates it's a live stream)
+                if "liveStreamingDetails" in video:
+                    log.info("Video %s has liveStreamingDetails - it's a live stream", video_id)
+                    return False
+                
+                # Check the liveBroadcastContent field
+                snippet = video.get("snippet", {})
+                live_broadcast = snippet.get("liveBroadcastContent", "none")
+                
+                # "none" = regular video, "live" = currently live, "upcoming" = scheduled stream
+                if live_broadcast != "none":
+                    log.info("Video %s has liveBroadcastContent=%s - skipping", video_id, live_broadcast)
+                    return False
+                
+                return True
+                
+    except Exception as e:
+        log.debug("Exception checking video type for %s: %s", video_id, e)
+        return True  # Default to assuming it's a video if check fails
 
 class YouTubeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
