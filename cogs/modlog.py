@@ -21,20 +21,16 @@ class ModLog(commands.Cog):
         self.bot = bot
         self.settings = load_settings()
 
+    # CHANNEL GETTERS
     def get_chat_log_channel(self, guild_id):
-        guild_id = str(guild_id)
-        cid = self.settings.get(guild_id, {}).get("chat_log_channel")
-        if cid:
-            return self.bot.get_channel(cid)
-        return None
+        cid = self.settings.get(str(guild_id), {}).get("chat_log_channel")
+        return self.bot.get_channel(cid) if cid else None
 
     def get_member_log_channel(self, guild_id):
-        guild_id = str(guild_id)
-        cid = self.settings.get(guild_id, {}).get("member_log_channel")
-        if cid:
-            return self.bot.get_channel(cid)
-        return None
+        cid = self.settings.get(str(guild_id), {}).get("member_log_channel")
+        return self.bot.get_channel(cid) if cid else None
 
+    # SET LOG CHANNELS
     @commands.hybrid_command(name="setmodlog", description="Set log channels for moderation events.")
     @commands.has_permissions(administrator=True)
     async def set_modlog(self, ctx, chat_log: discord.TextChannel, member_log: discord.TextChannel):
@@ -44,14 +40,13 @@ class ModLog(commands.Cog):
         self.settings[guild_id]["chat_log_channel"] = chat_log.id
         self.settings[guild_id]["member_log_channel"] = member_log.id
         save_settings(self.settings)
-
         await ctx.reply(
             f"✅ Chat log set to {chat_log.mention}\n✅ Member log set to {member_log.mention}",
             ephemeral=True
         )
         logging.info(f"Set mod logs for {ctx.guild.name}: chat={chat_log.name}, member={member_log.name}")
 
-    # --- Message logs ---
+    # MESSAGE LOGS
     @commands.Cog.listener()
     async def on_message_delete(self, message):
         if not message.guild or message.author.bot:
@@ -87,7 +82,7 @@ class ModLog(commands.Cog):
         embed.add_field(name="After", value=after.content or "*(empty)*", inline=False)
         await channel.send(embed=embed)
 
-    # --- Member logs ---
+    # MEMBER LOGS
     @commands.Cog.listener()
     async def on_member_join(self, member):
         channel = self.get_member_log_channel(member.guild.id)
