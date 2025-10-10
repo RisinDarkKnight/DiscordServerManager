@@ -16,11 +16,23 @@ def save_config(data):
     with open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+class AppealButton(discord.ui.View):
+    def __init__(self, user):
+        super().__init__(timeout=None)
+        self.user = user
+
+    @discord.ui.button(label="Appeal Ban", style=discord.ButtonStyle.primary, emoji="📝")
+    async def appeal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "If you believe this was a mistake, please submit your appeal here:\n🔗 **[Ban Appeal Form](https://yourserver.com/appeal)**",
+            ephemeral=True
+        )
+
 class CommandsCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    #HELP COMMAND
+    # HELP COMMAND
     @app_commands.command(name="help", description="Show a list of all bot commands and categories.")
     async def help(self, interaction: discord.Interaction):
         embed = discord.Embed(
@@ -76,27 +88,33 @@ class CommandsCog(commands.Cog):
         )
 
         embed.add_field(
+            name="**Moderation Logs**",
+            value=(
+                "`/setlogchannels <member_channel> <admin_channel>` — *(Admin)* Set where to log bans, kicks, messages, etc.\n"
+                "Bans automatically send an embed with reason and moderator."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
             name="**General Info**",
             value="Need help? Contact an admin or use the **Support Panel** in your server!",
             inline=False
         )
 
         embed.set_footer(text="Developed for your server with ❤️")
-
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    #AUTO VC COMMAND
+    # AUTO VC
     @app_commands.command(name="setautovc", description="Set the permanent 'Join to Create' voice channel for AutoVC.")
     @app_commands.describe(channel="Select the voice channel to use as the Join-to-Create hub.")
     @app_commands.checks.has_permissions(administrator=True)
     async def setautovc(self, interaction: discord.Interaction, channel: discord.VoiceChannel):
         guild_id = str(interaction.guild.id)
         config = load_config()
-
         if guild_id not in config:
             config[guild_id] = {}
 
-        # Use the same key as in autovc.py for consistency
         config[guild_id]["join_vc_id"] = channel.id
         save_config(config)
 
@@ -111,13 +129,77 @@ class CommandsCog(commands.Cog):
     @setautovc.error
     async def setautovc_error(self, interaction: discord.Interaction, error):
         if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "❌ You do not have permission to use this command.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
         else:
-            await interaction.response.send_message(
-                "⚠️ An error occurred while setting the Auto VC channel.", ephemeral=True
+            await interaction.response.send_message("⚠️ An error occurred while setting the Auto VC channel.", ephemeral=True)
+
+    # SET LOG CHANNELS
+    @app_commands.command(name="setlogchannels", description="Set channels for moderation and member logs.")
+    @app_commands.describe(
+        member_channel="Channel for user joins, leaves, bans, kicks",
+        admin_channel="Channel for deleted/edited messages"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setlogchannels(self, interaction: discord.Interaction, member_channel: discord.TextChannel, admin_channel: discord.TextChannel):
+        guild_id = str(interaction.guild.id)
+        config = load_config()
+        if guild_id not in config:
+            config[guild_id] = {}
+
+        config[guild_id]["member_logs"] = member_channel.id
+        config[guild_id]["admin_logs"] = admin_channel.id
+        save_config(config)
+
+        embed = discord.Embed(
+            title="✅ Log Channels Set",
+            description=f"👥 Member logs → {member_channel.mention}\n🛡️ Admin logs → {admin_channel.mention}",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # BAN EVENT
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild, user):
+        config = load_config()
+        guild_id = str(guild.id)
+
+        if guild_id not in config or "member_logs" not in config[guild_id]:
+            return
+
+        log_channel = guild.get_channel(config[guild_id]["member_logs"])
+        if not log_channel:
+            return
+
+        embed = discord.Embed(
+            title="🚫 Member Banned",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="User", value=f"{user.mention} ({user})", inline=False)
+        embed.add_field(name="Moderator", value="Unknown (Audit Log Pending)", inline=False)
+
+        try:
+            entry = await guild.audit_logs(limit=1, action=discord.AuditLogAction.ban).flatten()
+            if entry:
+                entry = entry[0]
+                embed.set_field_at(1, name="Moderator", value=entry.user.mention)
+                embed.add_field(name="Reason", value=entry.reason or "No reason provided.", inline=False)
+        except Exception:
+            pass
+
+        await log_channel.send(embed=embed, view=AppealButton(user))
+
+        # DM the banned user
+        try:
+            dm_embed = discord.Embed(
+                title="🔨 You’ve Been Banned",
+                description=f"You’ve been banned from **{guild.name}**.",
+                color=discord.Color.red()
             )
+            dm_embed.add_field(name="Reason", value=entry.reason or "No reason provided.", inline=False)
+            dm_embed.set_footer(text="If you believe this is a mistake, click below to appeal.")
+            await user.send(embed=dm_embed, view=AppealButton(user))
+        except Exception:
+            pass
 
 async def setup(bot):
     await bot.add_cog(CommandsCog(bot))
