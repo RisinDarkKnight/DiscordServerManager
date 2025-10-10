@@ -21,29 +21,42 @@ class ModLog(commands.Cog):
         self.bot = bot
         self.settings = load_settings()
 
-    def get_log_channel(self, guild_id):
+    def get_chat_log_channel(self, guild_id):
         guild_id = str(guild_id)
-        channel_id = self.settings.get(guild_id, {}).get("modlog_channel")
-        if channel_id:
-            return self.bot.get_channel(channel_id)
+        cid = self.settings.get(guild_id, {}).get("chat_log_channel")
+        if cid:
+            return self.bot.get_channel(cid)
         return None
 
-    @commands.hybrid_command(name="setmodlog", description="Set the moderation log channel.")
+    def get_member_log_channel(self, guild_id):
+        guild_id = str(guild_id)
+        cid = self.settings.get(guild_id, {}).get("member_log_channel")
+        if cid:
+            return self.bot.get_channel(cid)
+        return None
+
+    @commands.hybrid_command(name="setmodlog", description="Set log channels for moderation events.")
     @commands.has_permissions(administrator=True)
-    async def set_modlog(self, ctx, channel: discord.TextChannel):
+    async def set_modlog(self, ctx, chat_log: discord.TextChannel, member_log: discord.TextChannel):
         guild_id = str(ctx.guild.id)
         if guild_id not in self.settings:
             self.settings[guild_id] = {}
-        self.settings[guild_id]["modlog_channel"] = channel.id
+        self.settings[guild_id]["chat_log_channel"] = chat_log.id
+        self.settings[guild_id]["member_log_channel"] = member_log.id
         save_settings(self.settings)
-        await ctx.reply(f"✅ Mod-log channel set to {channel.mention}", ephemeral=True)
-        logging.info(f"Set mod-log channel for {ctx.guild.name} → {channel.name}")
 
+        await ctx.reply(
+            f"✅ Chat log set to {chat_log.mention}\n✅ Member log set to {member_log.mention}",
+            ephemeral=True
+        )
+        logging.info(f"Set mod logs for {ctx.guild.name}: chat={chat_log.name}, member={member_log.name}")
+
+    # --- Message logs ---
     @commands.Cog.listener()
     async def on_message_delete(self, message):
-        if message.author.bot or not message.guild:
+        if not message.guild or message.author.bot:
             return
-        channel = self.get_log_channel(message.guild.id)
+        channel = self.get_chat_log_channel(message.guild.id)
         if not channel:
             return
         embed = discord.Embed(
@@ -57,11 +70,11 @@ class ModLog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message_edit(self, before, after):
-        if before.author.bot or not before.guild:
+        if not before.guild or before.author.bot:
             return
         if before.content == after.content:
             return
-        channel = self.get_log_channel(before.guild.id)
+        channel = self.get_chat_log_channel(before.guild.id)
         if not channel:
             return
         embed = discord.Embed(
@@ -74,21 +87,34 @@ class ModLog(commands.Cog):
         embed.add_field(name="After", value=after.content or "*(empty)*", inline=False)
         await channel.send(embed=embed)
 
+    # --- Member logs ---
+    @commands.Cog.listener()
+    async def on_member_join(self, member):
+        channel = self.get_member_log_channel(member.guild.id)
+        if not channel:
+            return
+        embed = discord.Embed(
+            title="✅ Member Joined",
+            description=f"{member.mention} joined the server.",
+            color=discord.Color.green()
+        )
+        await channel.send(embed=embed)
+
     @commands.Cog.listener()
     async def on_member_remove(self, member):
-        channel = self.get_log_channel(member.guild.id)
+        channel = self.get_member_log_channel(member.guild.id)
         if not channel:
             return
         embed = discord.Embed(
             title="🚪 Member Left",
-            description=f"{member.mention} has left the server.",
+            description=f"{member.mention} left the server.",
             color=discord.Color.yellow()
         )
         await channel.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild, user):
-        channel = self.get_log_channel(guild.id)
+        channel = self.get_member_log_channel(guild.id)
         if not channel:
             return
         embed = discord.Embed(
@@ -100,13 +126,13 @@ class ModLog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_unban(self, guild, user):
-        channel = self.get_log_channel(guild.id)
+        channel = self.get_member_log_channel(guild.id)
         if not channel:
             return
         embed = discord.Embed(
             title="♻️ Member Unbanned",
             description=f"{user.mention} was unbanned.",
-            color=discord.Color.green()
+            color=discord.Color.blurple()
         )
         await channel.send(embed=embed)
 
