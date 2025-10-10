@@ -40,7 +40,7 @@ class AutoVCBot(commands.Bot):
             case_insensitive=True,
             strip_after_prefix=True
         )
-        self.initial_extensions = ["cogs.commands", "cogs.autovc", "cogs.tickets", "cogs.twitch", "cogs.youtube"]
+        self.initial_extensions = ["cogs.commands", "cogs.autovc", "cogs.tickets", "cogs.twitch", "cogs.youtube", "cogs.modlog"]
     
     async def setup_hook(self):
         """Called when the bot is starting up"""
