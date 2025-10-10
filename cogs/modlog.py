@@ -31,20 +31,32 @@ class ModLog(commands.Cog):
         return self.bot.get_channel(cid) if cid else None
 
     # SET LOG CHANNELS
-    @commands.hybrid_command(name="setmodlog", description="Set log channels for moderation events.")
-    @commands.has_permissions(administrator=True)
-    async def set_modlog(self, ctx, chat_log: discord.TextChannel, member_log: discord.TextChannel):
-        guild_id = str(ctx.guild.id)
-        if guild_id not in self.settings:
-            self.settings[guild_id] = {}
-        self.settings[guild_id]["chat_log_channel"] = chat_log.id
-        self.settings[guild_id]["member_log_channel"] = member_log.id
-        save_settings(self.settings)
-        await ctx.reply(
-            f"✅ Chat log set to {chat_log.mention}\n✅ Member log set to {member_log.mention}",
-            ephemeral=True
-        )
-        logging.info(f"Set mod logs for {ctx.guild.name}: chat={chat_log.name}, member={member_log.name}")
+@commands.hybrid_command(name="setmodlog", description="Set log channels for moderation events.")
+@commands.has_permissions(administrator=True)
+async def set_modlog(self, ctx, chat_log: discord.TextChannel, member_log: discord.TextChannel):
+    guild_id = str(ctx.guild.id)
+
+    # Always reload settings from file before modifying
+    settings = load_settings()
+
+    # Initialize guild section if missing
+    if guild_id not in settings:
+        settings[guild_id] = {}
+
+    settings[guild_id]["chat_log_channel"] = chat_log.id
+    settings[guild_id]["member_log_channel"] = member_log.id
+
+    # Save immediately
+    save_settings(settings)
+
+    # Update in-memory copy as well
+    self.settings = settings
+
+    await ctx.reply(
+        f"✅ Chat log set to {chat_log.mention}\n✅ Member log set to {member_log.mention}",
+        ephemeral=True
+    )
+
 
     # MESSAGE LOGS
     @commands.Cog.listener()
