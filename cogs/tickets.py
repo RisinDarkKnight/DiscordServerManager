@@ -232,65 +232,56 @@ class ResolveTicketView(discord.ui.View):
             await interaction.response.send_message("❌ You don't have permission to create discussion channels!", ephemeral=True)
             return
         
-        class DiscussionModal(discord.ui.Modal, title="Create Discussion Channel"):
-            reason = discord.ui.TextInput(
-                label="Reason for Discussion",
-                placeholder="Why is this discussion needed?",
-                style=discord.TextStyle.paragraph,
-                required=True,
-                max_length=500
+        # Show user selection view first
+        class UserSelectionView(discord.ui.View):
+            def __init__(inner_self):
+                super().__init__(timeout=180)
+                inner_self.selected_users = []
+                inner_self.reason = None
+            
+            @discord.ui.select(
+                cls=discord.ui.UserSelect,
+                placeholder="Select users to add (1-3 users)",
+                min_values=1,
+                max_values=3
             )
-            
-            user1 = discord.ui.TextInput(
-                label="User 1 (ID or @mention)",
-                placeholder="User ID or mention",
-                required=True,
-                max_length=100
-            )
-            
-            user2 = discord.ui.TextInput(
-                label="User 2 (optional)",
-                placeholder="User ID or mention",
-                required=False,
-                max_length=100
-            )
-            
-            user3 = discord.ui.TextInput(
-                label="User 3 (optional)",
-                placeholder="User ID or mention",
-                required=False,
-                max_length=100
-            )
-            
-            def __init__(inner_self, ticket_cog, ticket_id):
-                super().__init__()
-                inner_self.ticket_cog = ticket_cog
-                inner_self.ticket_id = ticket_id
-            
-            async def on_submit(inner_self, modal_interaction: discord.Interaction):
-                # Parse user inputs
-                users = []
-                for field in [inner_self.user1, inner_self.user2, inner_self.user3]:
-                    if field.value:
-                        user_id = field.value.strip().replace("<@", "").replace(">", "").replace("!", "")
-                        try:
-                            user = await modal_interaction.guild.fetch_member(int(user_id))
-                            users.append(user)
-                        except Exception as e:
-                            log.debug(f"Could not fetch user {user_id}: {e}")
+            async def user_select(inner_self, select_interaction: discord.Interaction, select: discord.ui.UserSelect):
+                inner_self.selected_users = select.values
                 
-                if not users:
-                    await modal_interaction.response.send_message("❌ No valid users found!", ephemeral=True)
-                    return
+                # Now ask for reason
+                class ReasonModal(discord.ui.Modal, title="Discussion Reason"):
+                    reason = discord.ui.TextInput(
+                        label="Reason for Discussion",
+                        placeholder="Why is this discussion needed?",
+                        style=discord.TextStyle.paragraph,
+                        required=True,
+                        max_length=500
+                    )
+                    
+                    def __init__(modal_self, parent_view, ticket_cog, ticket_id):
+                        super().__init__()
+                        modal_self.parent_view = parent_view
+                        modal_self.ticket_cog = ticket_cog
+                        modal_self.ticket_id = ticket_id
+                    
+                    async def on_submit(modal_self, modal_interaction: discord.Interaction):
+                        await modal_self.ticket_cog.create_discussion_channel(
+                            modal_interaction,
+                            modal_self.ticket_id,
+                            modal_self.parent_view.selected_users,
+                            modal_self.reason.value
+                        )
                 
-                await inner_self.ticket_cog.create_discussion_channel(
-                    modal_interaction,
-                    inner_self.ticket_id,
-                    users,
-                    inner_self.reason.value
-                )
+                await select_interaction.response.send_modal(ReasonModal(inner_self, self.ticket_cog, self.ticket_id))
         
-        await interaction.response.send_modal(DiscussionModal(self.ticket_cog, self.ticket_id))
+        view = UserSelectionView()
+        await interaction.response.send_message(
+            "**Select Users for Discussion**\n"
+            "Use the dropdown below to select 1-3 users to include in the discussion channel.\n"
+            "After selecting users, you'll be prompted to enter the reason.",
+            view=view,
+            ephemeral=True
+        )
 
 class ResolveDiscussionView(discord.ui.View):
     def __init__(self, ticket_cog, ticket_id, discussion_id):
