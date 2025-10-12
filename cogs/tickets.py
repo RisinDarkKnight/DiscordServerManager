@@ -139,56 +139,26 @@ class ResolveTicketView(discord.ui.View):
         self.ticket_id = ticket_id
         
         # Create buttons with proper custom_ids
-        self.add_item(discord.ui.Button(
+        resolve_button = discord.ui.Button(
             label="Resolve Ticket",
             style=discord.ButtonStyle.success,
             emoji="✅",
             custom_id=f"resolve_ticket_{ticket_id}"[:100],
             row=0
-        ))
-        self.add_item(discord.ui.Button(
+        )
+        resolve_button.callback = self.resolve_ticket
+        self.add_item(resolve_button)
+        
+        discussion_button = discord.ui.Button(
             label="Create Discussion",
             style=discord.ButtonStyle.secondary,
             emoji="💬",
             custom_id=f"create_discussion_{ticket_id}"[:100],
             row=0
-        ))
-        
-        # Set callbacks
-        self.children[0].callback = self.resolve_ticket
-        self.children[1].callback = self.create_discussion
+        )
+        discussion_button.callback = self.create_discussion
+        self.add_item(discussion_button)
 
-    async def resolve_ticket(self, interaction: discord.Interaction):
-        cfg = load_json(CONFIG_FILE)
-        guild_cfg = cfg.get(str(interaction.guild_id), {})
-        support_roles = guild_cfg.get("ticket_support_roles", [])
-        
-        user_role_ids = [role.id for role in interaction.user.roles]
-        if not any(role_id in support_roles for role_id in user_role_ids) and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ You don't have permission to resolve tickets!", ephemeral=True)
-            return
-        
-        class ResolutionModal(discord.ui.Modal, title="Resolve Ticket"):
-            resolution = discord.ui.TextInput(
-                label="Resolution Details",
-                placeholder="Explain how this ticket was resolved...",
-                style=discord.TextStyle.paragraph,
-                required=True,
-                max_length=2000
-            )
-            
-            def __init__(inner_self, ticket_cog, ticket_id):
-                super().__init__()
-                inner_self.ticket_cog = ticket_cog
-                inner_self.ticket_id = ticket_id
-            
-            async def on_submit(inner_self, modal_interaction: discord.Interaction):
-                await inner_self.ticket_cog.complete_resolution(
-                    modal_interaction, 
-                    inner_self.ticket_id, 
-                    inner_self.resolution.value
-                )
-        
     async def resolve_ticket(self, interaction: discord.Interaction):
         cfg = load_json(CONFIG_FILE)
         guild_cfg = cfg.get(str(interaction.guild_id), {})

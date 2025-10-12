@@ -85,10 +85,10 @@ class CommandsCog(commands.Cog):
         embed.add_field(
             name="**Tickets**",
             value=(
-                "`/setticketcategory <category>` — *(Admin)* Set ticket category.\n"
-                "`/setticketrole <role>` — *(Admin)* Set roles who can view tickets.\n"
-                "`/removeticketrole` — *(Admin)* Remove a support role.\n"
-                "`/addticketpanel` — *(Admin)* Create ticket panel embed with buttons."
+                "`/ticket_panel` — *(Admin)* Create ticket panel embed with buttons.\n"
+                "`/set_ticket_archive <channel>` — *(Admin)* Set archive channel for resolved tickets.\n"
+                "`/add_support_role <role>` — *(Admin)* Add role that can manage tickets.\n"
+                "`/ticket_stats` — *(Admin)* View ticket statistics."
             ), inline=False
         )
 
@@ -105,7 +105,7 @@ class CommandsCog(commands.Cog):
         embed.add_field(
             name="**Moderation**",
             value=(
-                "`/setlogchannels <member_channel> <admin_channel>` — *(Admin)* Log channels for mod actions.\n"
+                "`/setmodlog <chat_channel> <member_channel>` — *(Admin)* Set log channels for mod actions.\n"
                 "`/setappealchannel <channel>` — *(Admin)* Channel for ban appeals.\n"
                 "`/tempban <user> <duration_minutes> <reason>` — Temp ban a member.\n"
                 "`/tempunban <user>` — Unban member before temp ban expires."
@@ -127,20 +127,6 @@ class CommandsCog(commands.Cog):
         config[guild_id]["join_vc_id"] = channel.id
         save_config(config)
         await interaction.response.send_message(f"✅ Auto VC set to {channel.mention}", ephemeral=True)
-
-    # LOG CHANNELS
-    @app_commands.command(name="setlogchannels", description="Set channels for member/admin logs.")
-    @app_commands.describe(member_channel="Member logs", admin_channel="Admin logs")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def setlogchannels(self, interaction: discord.Interaction, member_channel: discord.TextChannel, admin_channel: discord.TextChannel):
-        config = load_config()
-        guild_id = str(interaction.guild.id)
-        if guild_id not in config:
-            config[guild_id] = {}
-        config[guild_id]["member_logs"] = member_channel.id
-        config[guild_id]["admin_logs"] = admin_channel.id
-        save_config(config)
-        await interaction.response.send_message(f"✅ Logs set: member → {member_channel.mention}, admin → {admin_channel.mention}", ephemeral=True)
 
     # APPEAL CHANNEL
     @app_commands.command(name="setappealchannel", description="Set channel for ban appeals")
@@ -174,7 +160,7 @@ class CommandsCog(commands.Cog):
         await interaction.guild.ban(user, reason=reason)
 
         # Log
-        member_log_id = config[guild_id].get("member_logs")
+        member_log_id = config[guild_id].get("member_log_channel")
         if member_log_id:
             channel = interaction.guild.get_channel(member_log_id)
             if channel:
@@ -188,7 +174,7 @@ class CommandsCog(commands.Cog):
 
         # DM
         try:
-            dm_embed = discord.Embed(title="🔨 You’ve Been Temp Banned", color=discord.Color.red())
+            dm_embed = discord.Embed(title="🔨 You've Been Temp Banned", color=discord.Color.red())
             dm_embed.add_field(name="Reason", value=reason)
             dm_embed.add_field(name="Duration (minutes)", value=duration)
             dm_embed.set_footer(text="You can appeal using the button below.")
@@ -213,7 +199,7 @@ class CommandsCog(commands.Cog):
         await interaction.guild.unban(user)
         await interaction.response.send_message(f"✅ {user} has been unbanned.", ephemeral=True)
 
-        member_log_id = config[guild_id].get("member_logs")
+        member_log_id = config[guild_id].get("member_log_channel")
         if member_log_id:
             channel = interaction.guild.get_channel(member_log_id)
             if channel:
@@ -237,7 +223,7 @@ class CommandsCog(commands.Cog):
                 if datetime.utcnow().timestamp() >= unban_ts:
                     user = await self.bot.fetch_user(int(user_id))
                     await guild.unban(user)
-                    member_log_id = data.get("member_logs")
+                    member_log_id = data.get("member_log_channel")
                     if member_log_id:
                         channel = guild.get_channel(member_log_id)
                         if channel:

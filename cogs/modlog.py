@@ -5,7 +5,7 @@ import os
 import logging
 
 log = logging.getLogger("modlog_cog")
-CONFIG_FILE = "server_config.json"  # Use the same config file as other cogs
+CONFIG_FILE = "server_config.json"
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
