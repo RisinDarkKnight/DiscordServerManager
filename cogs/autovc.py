@@ -150,6 +150,9 @@ class AutoVCCog(commands.Cog):
         # Check if LFG is enabled
         lfg_status = "🟢 Enabled" if "[LFG]" in vc.name else "🔴 Disabled"
         
+        # Check if LFG is enabled
+        live_status = "🟢 Enabled" if "[L]" in vc.name else "🔴 Disabled"
+
         # Count current members
         member_count = len(vc.members)
         
@@ -162,6 +165,7 @@ class AutoVCCog(commands.Cog):
                 f"├ **📝 Name:** `{vc.name}`\n"
                 f"├ **🚪 User Limit:** `{vc.user_limit if vc.user_limit > 0 else 'Unlimited'}`\n"
                 f"├ **🎯 LFG Tag:** {lfg_status}\n"
+                f"├ **🎥 LIVE Tag:** {live_status}\n"
                 f"├ **🔒 Locked:** `{'🔒 Yes' if is_locked else '🔓 No'}`\n"
                 f"└ **👻 Hidden:** `{'👻 Yes' if '🙈' in vc.name else '👁️ No'}`\n\n"
                 "**⚡ Quick Actions Available:**\n"
@@ -169,6 +173,7 @@ class AutoVCCog(commands.Cog):
                 "• 👥 Set user limit\n"
                 "• 📊 View channel status\n"
                 "• 🎯 Toggle LFG tag\n"
+                "• 🎥 Toggle LIVE tag\n"
                 "• 🔒 Lock/unlock channel\n"
                 "• 👻 Hide/show channel"
             ),
@@ -206,7 +211,8 @@ class ChannelSettingsDropdown(discord.ui.Select):
             discord.SelectOption(label="Name", emoji="📝", description="Change the channel name"),
             discord.SelectOption(label="Limit", emoji="👥", description="Change the user limit"),
             discord.SelectOption(label="Status", emoji="📊", description="View current channel status"),
-            discord.SelectOption(label="LFG", emoji="🎯", description="Toggle Looking for Game tag")
+            discord.SelectOption(label="LFG", emoji="🎯", description="Toggle Looking for Game tag"),
+            discord.SelectOption(label="LIVE", emoji="🎥", description="Toggle LIVE to let others know")
         ]
         super().__init__(placeholder="⚙️ Channel Settings", options=options)
 
@@ -256,6 +262,26 @@ class ChannelSettingsDropdown(discord.ui.Select):
                 
             except discord.HTTPException as e:
                 await interaction.response.send_message(f"❌ Failed to toggle LFG: {e.text}", ephemeral=True)
+            
+        elif choice == "LIVE":
+            try:
+                if "[LIVE]" in self.vc.name:
+                    new_name = self.vc.name.replace(" [LIVE]", "")
+                    status = "removed from"
+                else:
+                    new_name = f"{self.vc.name} [LIVE]"
+                    status = "added to"
+                
+                await self.vc.edit(name=new_name)
+                
+                # Update the embed
+                cog = AutoVCCog(self.vc.guild.voice_client or interaction.client)
+                await cog.update_status_embed(self.vc)
+                
+                await interaction.response.send_message(f"✅ LIVE tag {status} `{self.vc.name}`.", ephemeral=True)
+                
+            except discord.HTTPException as e:
+                await interaction.response.send_message(f"❌ Failed to toggle LIVE: {e.text}", ephemeral=True)
 
 class NameModal(discord.ui.Modal, title="Change Channel Name"):
     def __init__(self, vc, dropdown):
