@@ -42,9 +42,17 @@ class ModLog(commands.Cog):
             return self.bot.get_channel(cid)
         return None
 
+    def get_voice_log_channel(self, guild_id):
+        config = load_config()
+        guild_id = str(guild_id)
+        cid = config.get(guild_id, {}).get("voice_log_channel")
+        if cid:
+            return self.bot.get_channel(cid)
+        return None
+
     @commands.hybrid_command(name="setmodlog", description="Set log channels for moderation events.")
     @commands.has_permissions(administrator=True)
-    async def set_modlog(self, ctx, chat_log: discord.TextChannel, member_log: discord.TextChannel):
+    async def set_modlog(self, ctx, chat_log: discord.TextChannel, member_log: discord.TextChannel, voice_log: discord.TextChannel = None):
         guild_id = str(ctx.guild.id)
 
         # Load fresh config
@@ -56,14 +64,20 @@ class ModLog(commands.Cog):
 
         config[guild_id]["chat_log_channel"] = chat_log.id
         config[guild_id]["member_log_channel"] = member_log.id
+        
+        if voice_log:
+            config[guild_id]["voice_log_channel"] = voice_log.id
 
         # Save immediately
         save_config(config)
 
-        await ctx.reply(
-            f"✅ Chat log set to {chat_log.mention}\n✅ Member log set to {member_log.mention}",
-            ephemeral=True
-        )
+        response = f"✅ Chat log set to {chat_log.mention}\n✅ Member log set to {member_log.mention}"
+        if voice_log:
+            response += f"\n✅ Voice log set to {voice_log.mention}"
+        else:
+            response += "\n⚠️ Voice log not set (will use member log)"
+
+        await ctx.reply(response, ephemeral=True)
         log.info(f"[MODLOG] Updated settings for {ctx.guild.name} ({guild_id})")
 
     # --- Message logs ---
@@ -302,12 +316,29 @@ class ModLog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
-        """Log voice channel joins/leaves/moves"""
-        channel = self.get_member_log_channel(member.guild.id)
+        """Log voice channel joins/leaves/moves with who moved them"""
+        # Use dedicated voice log channel, fallback to member log
+        channel = self.get_voice_log_channel(member.guild.id)
+        if not channel:
+            channel = self.get_member_log_channel(member.guild.id)
         if not channel:
             return
         
         try:
+            # Check if someone else moved them (check audit log)
+            moved_by = None
+            if before.channel != after.channel and before.channel is not None and after.channel is not None:
+                try:
+                    async for entry in member.guild.audit_logs(limit=5, action=discord.AuditLogAction.member_move):
+                        if entry.target.id == member.id:
+                            # Check if this happened very recently (within 2 seconds)
+                            time_diff = (discord.utils.utcnow() - entry.created_at).total_seconds()
+                            if time_diff < 2:
+                                moved_by = entry.user
+                                break
+                except:
+                    pass
+            
             # Joined voice
             if before.channel is None and after.channel is not None:
                 embed = discord.Embed(
@@ -342,6 +373,13 @@ class ModLog(commands.Cog):
                 embed.add_field(name="Member", value=member.mention, inline=False)
                 embed.add_field(name="From", value=before.channel.mention, inline=True)
                 embed.add_field(name="To", value=after.channel.mention, inline=True)
+                
+                if moved_by and moved_by.id != member.id:
+                    embed.add_field(name="Moved By", value=moved_by.mention, inline=False)
+                    embed.description = f"**{member.mention}** was moved by **{moved_by.mention}**"
+                else:
+                    embed.description = f"**{member.mention}** moved themselves"
+                
                 embed.set_footer(text=f"User ID: {member.id}")
                 await channel.send(embed=embed)
                 

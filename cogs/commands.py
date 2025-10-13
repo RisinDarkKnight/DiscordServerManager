@@ -105,7 +105,7 @@ class CommandsCog(commands.Cog):
         embed.add_field(
             name="**Moderation**",
             value=(
-                "`/setmodlog <chat_channel> <member_channel>` — *(Admin)* Set log channels for mod actions.\n"
+                "`/setmodlog <chat_channel> <member_channel> <voice_channel>` — *(Admin)* Set log channels.\n"
                 "`/setappealchannel <channel>` — *(Admin)* Channel for ban appeals.\n"
                 "`/tempban <user> <duration_minutes> <reason>` — Temp ban a member.\n"
                 "`/tempunban <user>` — Unban member before temp ban expires."

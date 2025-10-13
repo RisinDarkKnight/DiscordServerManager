@@ -558,9 +558,22 @@ class TicketsApplicationsCog(commands.Cog):
                             timestamp=datetime.now()
                         )
                         embed.add_field(name="Reason", value=discussion_data.get('reason', 'N/A')[:1024], inline=False)
-                        embed.add_field(name="Participants", value=str(len(discussion_data.get('user_ids', []))), inline=True)
+                        
+                        # Show participant mentions instead of just count
+                        participant_ids = discussion_data.get('user_ids', [])
+                        if participant_ids:
+                            participant_mentions = [f"<@{uid}>" for uid in participant_ids]
+                            embed.add_field(
+                                name=f"Participants ({len(participant_ids)})",
+                                value=", ".join(participant_mentions),
+                                inline=False
+                            )
+                        else:
+                            embed.add_field(name="Participants", value="None", inline=False)
+                        
                         embed.add_field(name="Messages", value=str(len(messages)), inline=True)
                         embed.add_field(name="Resolved By", value=f"<@{resolver.id}>", inline=True)
+                        embed.add_field(name="Created By", value=f"<@{discussion_data.get('creator_id')}>", inline=True)
                         
                         await archive_channel.send(embed=embed, file=file)
                         
