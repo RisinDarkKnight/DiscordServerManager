@@ -97,7 +97,9 @@ class CommandsCog(commands.Cog):
             name="**Auto Voice Channels**",
             value=(
                 "`/setautovc <voice_channel>` — *(Admin)* Set Join-to-Create VC.\n"
-                "Users get temp channels automatically."
+                "`/setstreamrole <role>` — *(Admin)* Auto-assign role to streaming members.\n"
+                "`/autovcstatus` — *(Admin)* Check AutoVC configuration.\n"
+                "Users get temp channels automatically with full controls."
             ), inline=False
         )
 
@@ -105,7 +107,7 @@ class CommandsCog(commands.Cog):
         embed.add_field(
             name="**Moderation**",
             value=(
-                "`/setmodlog <chat_channel> <member_channel> <voice_channel>` — *(Admin)* Set log channels.\n"
+                "`/setmodlog <chat_channel> <member_channel> [voice_channel]` — *(Admin)* Set log channels.\n"
                 "`/setappealchannel <channel>` — *(Admin)* Channel for ban appeals.\n"
                 "`/tempban <user> <duration_minutes> <reason>` — Temp ban a member.\n"
                 "`/tempunban <user>` — Unban member before temp ban expires."

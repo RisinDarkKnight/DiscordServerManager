@@ -32,22 +32,18 @@ class TwitchCog(commands.Cog):
         self.session = aiohttp.ClientSession()
         self._token = None
         self._token_expires = 0
-        self._user_cache = {}  # Cache for user profile pictures
-        self._game_cache = {}  # Cache for game images
+        self._user_cache = {}
+        self._game_cache = {}
         self._initialize_data()
         self.check_streams.start()
 
     def _initialize_data(self):
-        """Initialize data structures for all configured guilds"""
         cfg = load_json(CONFIG_FILE)
         d = load_json(DATA_FILE)
         
-        # Ensure data structure exists for all configured guilds
         for gid in cfg.keys():
             d.setdefault(gid, {}).setdefault("twitch", {})
-            # Ensure streamers list exists
             cfg.setdefault(gid, {}).setdefault("twitch", {}).setdefault("streamers", [])
-            # Ensure streamer_info dict exists (for display names)
             cfg.setdefault(gid, {}).setdefault("twitch", {}).setdefault("streamer_info", {})
         
         save_json(DATA_FILE, d)
@@ -60,25 +56,7 @@ class TwitchCog(commands.Cog):
         except Exception:
             pass
 
-    def _format_timestamp(self, dt: datetime):
-        """Format timestamp like 'Today at 21:50' or 'Yesterday at 21:50' or full date"""
-        now = datetime.now()
-        time_str = dt.strftime("%H:%M")
-        
-        # Check if today
-        if dt.date() == now.date():
-            return f"Today at {time_str}"
-        
-        # Check if yesterday
-        yesterday = (now - timedelta(days=1)).date()
-        if dt.date() == yesterday:
-            return f"Yesterday at {time_str}"
-        
-        # Otherwise full date
-        return dt.strftime("%d/%m/%Y %H:%M")
-
     async def _fetch_game_image(self, game_id: str):
-        """Fetch game box art image"""
         if not game_id:
             return None
             
@@ -133,8 +111,6 @@ class TwitchCog(commands.Cog):
             return None
 
     async def _extract_username_from_url(self, url: str):
-        """Extract username from Twitch URL"""
-        # Handle URLs like https://twitch.tv/username or https://www.twitch.tv/username
         import re
         match = re.search(r'twitch\.tv/([a-zA-Z0-9_]+)', url)
         if match:
@@ -142,7 +118,6 @@ class TwitchCog(commands.Cog):
         return None
 
     async def _fetch_user_info(self, username: str):
-        """Fetch user info including profile picture"""
         if username in self._user_cache:
             return self._user_cache[username]
             
@@ -195,9 +170,7 @@ class TwitchCog(commands.Cog):
             return None
 
     async def _send_stream_notification(self, guild, channel, role, username, stream, force=False):
-        """Send a stream notification with proper embed matching the design"""
         try:
-            # Get user info for profile picture
             user_info = await self._fetch_user_info(username)
             
             title = stream.get("title") or f"{stream.get('user_name', username)} is live!"
@@ -206,54 +179,49 @@ class TwitchCog(commands.Cog):
             viewers = stream.get("viewer_count", 0)
             thumb = stream.get("thumbnail_url", "").replace("{width}", "1280").replace("{height}", "720")
             
-            # Get current timestamp
-            now = datetime.now()
-            timestamp_str = self._format_timestamp(now)
-            
-            # Fetch game box art
+            # Get game box art for thumbnail
             game_image = None
             if stream.get("game_id"):
                 game_image = await self._fetch_game_image(stream.get("game_id"))
             
-            # Create embed matching the Twitch design from the screenshot
             embed = discord.Embed(
                 title=title, 
                 url=f"https://twitch.tv/{username}",
-                color=discord.Color.from_str("#9146FF")  # Twitch purple
+                color=discord.Color.from_str("#9146FF"),
+                timestamp=datetime.utcnow()
             )
             
-            # Add author with username only
+            # Author with profile pic and name - make it clickable to their channel
             if user_info:
                 embed.set_author(
                     name=user_name,
-                    icon_url=user_info.get("profile_image")
+                    icon_url=user_info.get("profile_image"),
+                    url=f"https://twitch.tv/{username}"  # Makes the author name clickable
                 )
             else:
-                embed.set_author(name=user_name)
+                embed.set_author(
+                    name=user_name,
+                    url=f"https://twitch.tv/{username}"
+                )
             
-            # Add description matching the format
             embed.description = f"{user_name} is now live on Twitch!"
             
-            # Add "Playing" field with game name
             embed.add_field(name="Playing", value=game, inline=False)
             
-            # Add profile picture as thumbnail (left side)
-            if user_info:
-                embed.set_thumbnail(url=user_info.get("profile_image"))
+            # Set game box art as thumbnail (top right)
+            if game_image:
+                embed.set_thumbnail(url=game_image)
             
-            # Add main image - prioritize thumbnail, fallback to game box art
+            # Stream thumbnail as main image
             if thumb:
                 embed.set_image(url=thumb)
-            elif game_image:
-                embed.set_image(url=game_image)
             
-            # Add footer with Twitch logo and smart timestamp
+            # Footer just says "Twitch" - timestamp is automatic from embed.timestamp
             embed.set_footer(
-                text=f"Twitch • {timestamp_str}",
+                text="Twitch",
                 icon_url="https://static-cdn.jtvnw.net/jtv_user_pictures/8a6381c7-d0c0-4576-b179-38bd5ce1d6af-profile_image-70x70.png"
             )
             
-            # Create view with watch button
             view = discord.ui.View()
             view.add_item(discord.ui.Button(
                 label="Watch Stream", 
@@ -265,14 +233,12 @@ class TwitchCog(commands.Cog):
             mention = role.mention if role else ""
             content = f"{user_name} is live, come say hello :D {mention}"
             
-            # Check bot permissions before sending
             perms = channel.permissions_for(guild.me)
             if not perms.send_messages:
                 log.error("No send_messages permission in channel %s", channel.name)
                 return False
             if not perms.embed_links:
                 log.error("No embed_links permission in channel %s", channel.name)
-                # Send without embed
                 await channel.send(content=f"{content}\n{f'https://twitch.tv/{username}'}")
                 return True
                 
@@ -295,7 +261,6 @@ class TwitchCog(commands.Cog):
         data = load_json(DATA_FILE)
         changed = False
         
-        # Ensure data structure exists for all configured guilds
         for gid in cfg.keys():
             data.setdefault(gid, {}).setdefault("twitch", {})
         
@@ -330,14 +295,12 @@ class TwitchCog(commands.Cog):
                     if stream:
                         sid = stream.get("id")
                         
-                        # Store the last stream data regardless of notification status
                         meta["last_stream"] = stream
                         changed = True
                         
                         if meta.get("notified") == sid:
                             continue
                         
-                        # Send notification
                         success = await self._send_stream_notification(guild, channel, role, username, stream)
                         if success:
                             data[gid]["twitch"][username]["notified"] = sid
@@ -356,7 +319,6 @@ class TwitchCog(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
-    # Status command to check Twitch setup
     @app_commands.command(name="twitchstatus", description="Check Twitch configuration status")
     @app_commands.checks.has_permissions(administrator=True)
     async def twitchstatus(self, interaction: discord.Interaction):
@@ -393,17 +355,14 @@ class TwitchCog(commands.Cog):
             
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # Commands
     @app_commands.command(name="addstreamer", description="Add a Twitch username or URL to track (admin)")
-    @app_commands.describe(username_or_url="Twitch username or URL (e.g., 'ninja' or 'https://twitch.tv/ninja')")
+    @app_commands.describe(username_or_url="Twitch username or URL")
     @app_commands.checks.has_permissions(administrator=True)
     async def addstreamer(self, interaction: discord.Interaction, username_or_url: str):
         await interaction.response.defer(ephemeral=True)
         
-        # Check if input is a URL
         username = await self._extract_username_from_url(username_or_url)
         if not username:
-            # Not a URL, treat as username
             username = username_or_url.strip().lower()
         
         cfg = load_json(CONFIG_FILE)
@@ -416,7 +375,6 @@ class TwitchCog(commands.Cog):
             await interaction.followup.send("That streamer is already tracked.", ephemeral=True)
             return
         
-        # Fetch user info to validate and get display name
         user_info = await self._fetch_user_info(username)
         if not user_info:
             await interaction.followup.send(f"❌ Could not find Twitch user `{username}`. Please check the username and try again.", ephemeral=True)
@@ -424,7 +382,6 @@ class TwitchCog(commands.Cog):
             
         display_name = user_info.get("display_name", username)
         
-        # Store username and display name
         tcfg["streamers"].append(username)
         tcfg["streamer_info"][username] = {
             "display_name": display_name,
@@ -466,7 +423,6 @@ class TwitchCog(commands.Cog):
                 cfg_local = load_json(CONFIG_FILE)
                 cfg_local[gid]["twitch"]["streamers"].remove(chosen)
                 
-                # Also remove from streamer_info
                 if chosen in cfg_local[gid]["twitch"].get("streamer_info", {}):
                     del cfg_local[gid]["twitch"]["streamer_info"][chosen]
                     
@@ -533,7 +489,6 @@ class TwitchCog(commands.Cog):
                 
                 await select_interaction.response.defer(ephemeral=True)
                 
-                # Get channel and role
                 channel_id = cfg.get(gid, {}).get("twitch", {}).get("notif_channel")
                 role_id = cfg.get(gid, {}).get("twitch", {}).get("notif_role")
                 
@@ -548,15 +503,12 @@ class TwitchCog(commands.Cog):
                     
                 role = select_interaction.guild.get_role(role_id) if role_id else None
                 
-                # Check if streamer is live
                 stream = await self.bot.cogs["TwitchCog"]._fetch_stream(chosen)
                 
                 if stream:
-                    # Reset notification status to force a new notification
                     data.setdefault(gid, {}).setdefault("twitch", {}).setdefault(chosen, {})["notified"] = None
                     save_json(DATA_FILE, data)
                     
-                    # Send notification
                     success = await self.bot.cogs["TwitchCog"]._send_stream_notification(
                         select_interaction.guild, channel, role, chosen, stream, force=True
                     )
@@ -566,7 +518,6 @@ class TwitchCog(commands.Cog):
                     else:
                         await select_interaction.followup.send(f"❌ Failed to send stream notification for `{display_name}`", ephemeral=True)
                 else:
-                    # If streamer is not live, inform the user
                     await select_interaction.followup.send(f"ℹ️ `{display_name}` is not currently live on Twitch.", ephemeral=True)
                 
         await interaction.followup.send("Choose a streamer to force check:", view=ForceCheckView(), ephemeral=True)

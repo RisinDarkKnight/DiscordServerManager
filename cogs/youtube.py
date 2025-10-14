@@ -26,19 +26,15 @@ def save_json(path, data):
         json.dump(data, f, indent=4)
 
 async def resolve_channel_id(raw: str):
-    """Resolve YouTube channel ID from URL, handle, or username"""
     raw = raw.strip()
     
-    # Direct channel ID
     if re.match(r"^UC[A-Za-z0-9_-]{20,}$", raw):
         return raw
         
-    # Channel URL
     m = re.search(r"youtube\.com\/channel\/([A-Za-z0-9_-]+)", raw)
     if m:
         return m.group(1)
         
-    # Username URL
     m = re.search(r"youtube\.com\/user\/([A-Za-z0-9_-]+)", raw)
     if m and YOUTUBE_KEY:
         username = m.group(1)
@@ -53,7 +49,6 @@ async def resolve_channel_id(raw: str):
                 if d.get("items"):
                     return d["items"][0]["id"]
                     
-    # Handle URL
     m = re.search(r"(?:youtube\.com\/@|@)([A-Za-z0-9_\-]+)", raw)
     if m and YOUTUBE_KEY:
         handle = m.group(1)
@@ -68,7 +63,6 @@ async def resolve_channel_id(raw: str):
                 if d.get("items"):
                     return d["items"][0]["snippet"]["channelId"]
     
-    # Video URL - extract channel from video
     m = re.search(r"youtube\.com\/watch\?v=([A-Za-z0-9_-]+)", raw)
     if m and YOUTUBE_KEY:
         video_id = m.group(1)
@@ -83,7 +77,6 @@ async def resolve_channel_id(raw: str):
                 if d.get("items"):
                     return d["items"][0]["snippet"]["channelId"]
                     
-    # Search by name
     if YOUTUBE_KEY:
         url = "https://www.googleapis.com/youtube/v3/search"
         params = {"part":"snippet","q":raw,"type":"channel","maxResults":1,"key":YOUTUBE_KEY}
@@ -98,13 +91,12 @@ async def resolve_channel_id(raw: str):
     return None
 
 async def fetch_channel_info(channel_id: str):
-    """Fetch channel information including profile picture and uploads playlist ID"""
     if not YOUTUBE_KEY:
         return None
         
     url = "https://www.googleapis.com/youtube/v3/channels"
     params = {
-        "part": "snippet,contentDetails",  # Added contentDetails to get uploads playlist
+        "part": "snippet,contentDetails",
         "id": channel_id,
         "key": YOUTUBE_KEY
     }
@@ -136,13 +128,11 @@ async def fetch_channel_info(channel_id: str):
         return None
 
 async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
-    """Fetch the latest video from a YouTube channel using PlaylistItems (efficient!)"""
     if not YOUTUBE_KEY:
         log.warning("YouTube key missing; youtube features disabled")
         return None
     
     try:
-        # If we don't have the uploads playlist ID, fetch it first
         if not uploads_playlist_id:
             log.info("Fetching uploads playlist ID for channel %s", channel_id)
             channel_info = await fetch_channel_info(channel_id)
@@ -154,12 +144,11 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
                 log.error("No uploads playlist found for channel %s", channel_id)
                 return None
         
-        # Use PlaylistItems.list - MUCH MORE EFFICIENT (1 quota vs 100 quota for search)
         url = "https://www.googleapis.com/youtube/v3/playlistItems"
         params = {
             "part": "snippet",
             "playlistId": uploads_playlist_id,
-            "maxResults": 10,  # Get more videos to filter out live streams
+            "maxResults": 10,
             "key": YOUTUBE_KEY
         }
         
@@ -176,7 +165,6 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
                     log.warning("No videos found in uploads playlist for channel %s", channel_id)
                     return None
                 
-                # Find the first actual video (not a live stream)
                 for item in items:
                     snip = item["snippet"]
                     vid = snip.get("resourceId", {}).get("videoId")
@@ -184,23 +172,19 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
                     if not vid:
                         continue
                     
-                    # Check if this is a live stream by looking at the title/description
                     title = snip.get("title", "").lower()
                     
-                    # Skip if it's clearly a live stream indicator
                     live_indicators = ["live stream", "livestream", "live now", "streaming now"]
                     if any(indicator in title for indicator in live_indicators):
                         log.info("Skipping live stream: %s (ID: %s)", snip.get("title"), vid)
                         continue
                     
-                    # Additional check: Fetch video details to confirm it's not live
                     if not await is_actual_video(vid):
                         log.info("Skipping non-video content: %s (ID: %s)", snip.get("title"), vid)
                         continue
                     
                     log.info("Found latest video: %s (ID: %s) for channel %s", snip.get("title"), vid, channel_id)
                     
-                    # Get best thumbnail
                     thumb = None
                     thumbs = snip.get("thumbnails", {})
                     for quality in ["maxres", "high", "medium", "default"]:
@@ -208,7 +192,6 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
                             thumb = thumbs[quality].get("url")
                             break
                     
-                    # Get publish date
                     published_at = snip.get("publishedAt", "")
                     
                     return {
@@ -220,7 +203,7 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
                         "url": f"https://youtube.com/watch?v={vid}",
                         "publishedAt": published_at,
                         "description": snip.get("description", ""),
-                        "uploads_playlist_id": uploads_playlist_id  # Store for future use
+                        "uploads_playlist_id": uploads_playlist_id
                     }
                 
                 log.warning("No valid videos found (all were live streams) for channel %s", channel_id)
@@ -231,9 +214,8 @@ async def fetch_latest_video(channel_id: str, uploads_playlist_id: str = None):
         return None
 
 async def is_actual_video(video_id: str):
-    """Check if a video ID is an actual uploaded video (not a live stream)"""
     if not YOUTUBE_KEY:
-        return True  # Assume it's a video if we can't check
+        return True
     
     try:
         url = "https://www.googleapis.com/youtube/v3/videos"
@@ -247,7 +229,7 @@ async def is_actual_video(video_id: str):
             async with s.get(url, params=params) as r:
                 if r.status != 200:
                     log.debug("Could not verify video type for %s", video_id)
-                    return True  # Assume it's a video if check fails
+                    return True
                 
                 d = await r.json()
                 items = d.get("items", [])
@@ -256,16 +238,13 @@ async def is_actual_video(video_id: str):
                 
                 video = items[0]
                 
-                # Check if it has live streaming details (indicates it's a live stream)
                 if "liveStreamingDetails" in video:
                     log.info("Video %s has liveStreamingDetails - it's a live stream", video_id)
                     return False
                 
-                # Check the liveBroadcastContent field
                 snippet = video.get("snippet", {})
                 live_broadcast = snippet.get("liveBroadcastContent", "none")
                 
-                # "none" = regular video, "live" = currently live, "upcoming" = scheduled stream
                 if live_broadcast != "none":
                     log.info("Video %s has liveBroadcastContent=%s - skipping", video_id, live_broadcast)
                     return False
@@ -274,7 +253,7 @@ async def is_actual_video(video_id: str):
                 
     except Exception as e:
         log.debug("Exception checking video type for %s: %s", video_id, e)
-        return True  # Default to assuming it's a video if check fails
+        return True
 
 class YouTubeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -283,29 +262,10 @@ class YouTubeCog(commands.Cog):
         self._initialize_data()
         self.check_uploads.start()
 
-    def _format_timestamp(self, dt: datetime):
-        """Format timestamp like 'Today at 21:50' or 'Yesterday at 21:50' or full date"""
-        now = datetime.now()
-        time_str = dt.strftime("%H:%M")
-        
-        # Check if today
-        if dt.date() == now.date():
-            return f"Today at {time_str}"
-        
-        # Check if yesterday
-        yesterday = (now - timedelta(days=1)).date()
-        if dt.date() == yesterday:
-            return f"Yesterday at {time_str}"
-        
-        # Otherwise full date
-        return dt.strftime("%d/%m/%Y %H:%M")
-
     def _initialize_data(self):
-        """Initialize data structures for all configured guilds"""
         cfg = load_json(CONFIG_FILE)
         d = load_json(DATA_FILE)
         
-        # Ensure data structure exists for all configured guilds
         for gid in cfg.keys():
             d.setdefault(gid, {}).setdefault("youtube", {})
             cfg.setdefault(gid, {}).setdefault("youtube", {}).setdefault("channels", {})
@@ -321,24 +281,20 @@ class YouTubeCog(commands.Cog):
             pass
 
     async def _send_video_notification(self, guild, channel, role, channel_id, latest, channel_info=None, force=False):
-        """Send a video notification with proper embed matching the design"""
         try:
-            # Parse timestamp
+            # Parse timestamp from YouTube API
             try:
                 pub_time = datetime.fromisoformat(latest["publishedAt"].replace("Z", "+00:00"))
-                timestamp_str = self._format_timestamp(pub_time)
             except:
-                now = datetime.now()
-                timestamp_str = self._format_timestamp(now)
+                pub_time = datetime.utcnow()
             
-            # Create embed matching the YouTube design from the screenshot
             embed = discord.Embed(
                 title=latest["title"], 
                 url=latest["url"], 
-                color=discord.Color.from_str("#FF0000")  # YouTube red
+                color=discord.Color.from_str("#FF0000"),
+                timestamp=pub_time  # Discord will auto-convert to user's timezone
             )
             
-            # Add author (channel name only)
             if channel_info:
                 embed.set_author(
                     name=latest['channelTitle'],
@@ -347,20 +303,17 @@ class YouTubeCog(commands.Cog):
             else:
                 embed.set_author(name=latest['channelTitle'])
             
-            # Add description matching the format
             embed.description = f"{latest['channelTitle']} uploaded a new video"
             
-            # Add profile picture as thumbnail (left side)
             if channel_info:
                 embed.set_thumbnail(url=channel_info.get("thumbnail"))
             
-            # Add video thumbnail as main image
             if latest.get("thumb"):
                 embed.set_image(url=latest["thumb"])
             
-            # Add footer with YouTube logo and smart timestamp
+            # Footer just says "YouTube" - timestamp is automatic from embed.timestamp
             embed.set_footer(
-                text=f"YouTube • {timestamp_str}",
+                text="YouTube",
                 icon_url="https://www.youtube.com/s/desktop/f506bd45/img/favicon_32.png"
             )
                 
@@ -375,14 +328,12 @@ class YouTubeCog(commands.Cog):
             mention = role.mention if role else ""
             content = f"{latest['channelTitle']} just uploaded a new video {mention}"
             
-            # Check bot permissions before sending
             perms = channel.permissions_for(guild.me)
             if not perms.send_messages:
                 log.error("No send_messages permission in channel %s", channel.name)
                 return False
             if not perms.embed_links:
                 log.error("No embed_links permission in channel %s", channel.name)
-                # Send without embed
                 await channel.send(content=f"{content}\n{latest['url']}")
                 return True
                 
@@ -401,7 +352,7 @@ class YouTubeCog(commands.Cog):
 
     @tasks.loop(seconds=POLL_SECONDS)
     async def check_uploads(self):
-        await self.bot.wait_until_ready()  # CRITICAL: Wait for bot first
+        await self.bot.wait_until_ready()
         
         cfg = load_json(CONFIG_FILE)
         data = load_json(DATA_FILE)
@@ -409,7 +360,6 @@ class YouTubeCog(commands.Cog):
         
         log.info("YouTube check starting - checking %d guilds", len(cfg))
         
-        # Ensure data structure exists for all configured guilds
         for gid in cfg.keys():
             data.setdefault(gid, {}).setdefault("youtube", {})
         
@@ -443,7 +393,7 @@ class YouTubeCog(commands.Cog):
             
             for raw, meta in list(channels.items()):
                 channel_id = meta.get("channel_id")
-                uploads_playlist_id = meta.get("uploads_playlist_id")  # Check if we have it cached
+                uploads_playlist_id = meta.get("uploads_playlist_id")
                 
                 if not channel_id:
                     log.warning("No channel_id for YouTube entry %s in guild %s", raw, gid)
@@ -457,7 +407,6 @@ class YouTubeCog(commands.Cog):
                         log.warning("No videos found for channel %s in guild %s", channel_id, gid)
                         continue
                     
-                    # Cache the uploads playlist ID for future checks (saves quota!)
                     if latest.get("uploads_playlist_id") and not uploads_playlist_id:
                         cfg[gid]["youtube"]["channels"][raw]["uploads_playlist_id"] = latest["uploads_playlist_id"]
                         save_json(CONFIG_FILE, cfg)
@@ -465,11 +414,9 @@ class YouTubeCog(commands.Cog):
                     
                     log.info("Found video: %s (ID: %s) for channel %s", latest.get("title"), latest.get("id"), channel_id)
                     
-                    # Get stored data for this channel
                     channel_data = data.get(gid, {}).get("youtube", {}).get(raw, {})
                     last_vid = channel_data.get("last_video")
                     
-                    # Store the latest video data regardless of notification status
                     data.setdefault(gid, {}).setdefault("youtube", {}).setdefault(raw, {})["latest_video_data"] = latest
                     changed = True
                     
@@ -479,10 +426,8 @@ class YouTubeCog(commands.Cog):
                     
                     log.info("New video detected! Last: %s, Current: %s", last_vid, latest["id"])
                     
-                    # Get channel info for profile picture
                     channel_info = await fetch_channel_info(channel_id)
                     
-                    # Send notification
                     log.info("Sending YouTube notification for %s in guild %s", latest["channelTitle"], gid)
                     success = await self._send_video_notification(guild, notif_channel, role, channel_id, latest, channel_info)
                     if success:
@@ -555,7 +500,6 @@ class YouTubeCog(commands.Cog):
             await interaction.followup.send("❌ Could not resolve a channel ID from input. Please provide a valid YouTube channel URL, handle, or ID.", ephemeral=True)
             return
             
-        # Check if already tracked
         existing = None
         for key, value in cfg[gid]["youtube"]["channels"].items():
             if value.get("channel_id") == channel_id:
@@ -566,7 +510,6 @@ class YouTubeCog(commands.Cog):
             await interaction.followup.send(f"❌ This channel is already tracked as `{existing}`", ephemeral=True)
             return
         
-        # Get channel info to store display name and uploads playlist
         channel_info = await fetch_channel_info(channel_id)
         channel_name = "Unknown"
         uploads_playlist_id = None
@@ -577,7 +520,7 @@ class YouTubeCog(commands.Cog):
         cfg[gid]["youtube"]["channels"][raw] = {
             "channel_id": channel_id,
             "channel_name": channel_name,
-            "uploads_playlist_id": uploads_playlist_id  # Cache this to save quota!
+            "uploads_playlist_id": uploads_playlist_id
         }
         save_json(CONFIG_FILE, cfg)
         
