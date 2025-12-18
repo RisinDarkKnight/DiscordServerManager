@@ -1,3 +1,128 @@
 {
-
+    "1353181677555548210": {
+        "twitch": {
+            "streamers": [
+                "b3an_dl",
+                "xreubenx",
+                "risindarkknight",
+                "mattia_json"
+            ],
+            "notif_channel": 1405421508964257832,
+            "notif_role": 1405421145704103989,
+            "streamer_info": {
+                "mattia_json": {
+                    "display_name": "mattia_json",
+                    "profile_image": "https://static-cdn.jtvnw.net/jtv_user_pictures/61a130b7-0137-45c0-ae72-007322f5cdc7-profile_image-300x300.png"
+                }
+            }
+        },
+        "youtube": {
+            "channels": {
+                "UCtVOHRJNZhxagHj1csm5LqQ": {
+                    "channel_id": "UCtVOHRJNZhxagHj1csm5LqQ",
+                    "channel_name": "Reuben",
+                    "uploads_playlist_id": "UUtVOHRJNZhxagHj1csm5LqQ"
+                },
+                "UCI4tSvq3ghswAI6x8Zdow0g": {
+                    "channel_id": "UCI4tSvq3ghswAI6x8Zdow0g",
+                    "channel_name": "Mattia",
+                    "uploads_playlist_id": "UUI4tSvq3ghswAI6x8Zdow0g"
+                },
+                "UCmj7DMASaEAg8QqD5YU3w0A": {
+                    "channel_id": "UCmj7DMASaEAg8QqD5YU3w0A",
+                    "channel_name": "RisinDarkKnight",
+                    "uploads_playlist_id": "UUmj7DMASaEAg8QqD5YU3w0A"
+                }
+            },
+            "notif_channel": 1422854684535947336,
+            "notif_role": 1422750661719756891
+        },
+        "ticket_roles": [
+            1422314741619097700
+        ],
+        "ticket_category": 1356804151966830652,
+        "ticket_panel_channel": 1422849491467370567,
+        "auto_vc_channel_id": 1423991423241420870,
+        "join_vc_id": 1423991423241420870,
+        "ticket_support_roles": [
+            1422314741619097700
+        ],
+        "ticket_archive_channel": 1424792486571671572,
+        "appeal_channel": 1426038437198299287,
+        "temp_bans": {},
+        "member_logs": 1426024696885018635,
+        "admin_logs": 1426024641046122547,
+        "chat_log_channel": 1426024641046122547,
+        "member_log_channel": 1426024696885018635,
+        "voice_log_channel": 1427292853259997254
+    },
+    "1284214575591592099": {
+        "twitch": {
+            "streamers": [
+                "baxle_b"
+            ],
+            "notif_channel": 1341878274615152721,
+            "notif_role": 1302603371768709121,
+            "streamer_info": {
+                "baxle_b": {
+                    "display_name": "baxle_b",
+                    "profile_image": "https://static-cdn.jtvnw.net/jtv_user_pictures/ead55aa4-01ea-4771-a848-c017106bfd6b-profile_image-300x300.png"
+                }
+            }
+        },
+        "youtube": {
+            "channels": {
+                "UCBO_QEKYadaCNee3-VbXbCA": {
+                    "channel_id": "UCBO_QEKYadaCNee3-VbXbCA",
+                    "channel_name": "Unknown",
+                    "uploads_playlist_id": "UUBO_QEKYadaCNee3-VbXbCA"
+                }
+            },
+            "notif_channel": 1284214577235628116,
+            "notif_role": 1305603375462875137
+        },
+        "ticket_category": 1423657235103617066,
+        "ticket_panel_channel": 1423657276903788594,
+        "ticket_roles": [
+            1284214575591592103,
+            1284214575591592102,
+            1284214575591592101
+        ],
+        "join_vc_id": 1372169107092541481,
+        "ticket_archive_channel": 1425142589690216468,
+        "temp_bans": {},
+        "member_logs": 1426173773580730460,
+        "admin_logs": 1426173985200279714,
+        "appeal_channel": 1426187358579200081,
+        "chat_log_channel": 1426173773580730460,
+        "member_log_channel": 1426173985200279714,
+        "voice_log_channel": 1427293625020322012
+    },
+    "1416616789311492098": {
+        "twitch": {
+            "streamers": [
+                "risindarkknight"
+            ],
+            "notif_channel": 1423534123464523796,
+            "notif_role": 1424649890952118382,
+            "streamer_info": {}
+        },
+        "youtube": {
+            "channels": {
+                "UCmj7DMASaEAg8QqD5YU3w0A": {
+                    "channel_id": "UCmj7DMASaEAg8QqD5YU3w0A",
+                    "channel_name": "RisinDarkKnight",
+                    "uploads_playlist_id": "UUmj7DMASaEAg8QqD5YU3w0A"
+                }
+            },
+            "notif_channel": 1423534271863197736,
+            "notif_role": 1424649842512105555
+        },
+        "ticket_panel_channel": 1424660540847816714,
+        "join_vc_id": 1424708287567364126,
+        "ticket_archive_channel": 1425131817454800966,
+        "temp_bans": {},
+        "member_logs": 1426220723189321829,
+        "admin_logs": 1426220801941704704
+    }
 }

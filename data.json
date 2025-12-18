@@ -1,3 +1,240 @@
 {
-    
+    "1353181677555548210": {
+        "twitch": {
+            "b3an_dl": {
+                "notified": null,
+                "last_stream": {
+                    "id": "315276032866",
+                    "user_id": "1128966467",
+                    "user_login": "b3an_dl",
+                    "user_name": "B3AN_DL",
+                    "game_id": "2132205352",
+                    "game_name": "Deadlock",
+                    "type": "live",
+                    "title": "Frontline abuser | E6/DNS contender",
+                    "viewer_count": 5,
+                    "started_at": "2025-12-02T12:10:45Z",
+                    "language": "en",
+                    "thumbnail_url": "https://static-cdn.jtvnw.net/previews-ttv/live_user_b3an_dl-{width}x{height}.jpg",
+                    "tag_ids": [],
+                    "tags": [
+                        "English",
+                        "EU",
+                        "Lash",
+                        "Paradox",
+                        "Educational",
+                        "Competitive"
+                    ],
+                    "is_mature": false
+                }
+            },
+            "xreubenx": {
+                "notified": null
+            },
+            "risindarkknight": {
+                "notified": null,
+                "last_stream": {
+                    "id": "315355676900",
+                    "user_id": "63173069",
+                    "user_login": "risindarkknight",
+                    "user_name": "RisinDarkKnight",
+                    "game_id": "2132205352",
+                    "game_name": "Deadlock",
+                    "type": "live",
+                    "title": "DeadChaps Tournament FINALS NOW BO3 fargareko fc VS Team 1",
+                    "viewer_count": 23,
+                    "started_at": "2025-12-07T17:52:13Z",
+                    "language": "en",
+                    "thumbnail_url": "https://static-cdn.jtvnw.net/previews-ttv/live_user_risindarkknight-{width}x{height}.jpg",
+                    "tag_ids": [],
+                    "tags": [
+                        "Ranked",
+                        "English",
+                        "Shooter",
+                        "MOBA",
+                        "Comptetitive",
+                        "ADHD"
+                    ],
+                    "is_mature": false
+                }
+            },
+            "mattia_json": {
+                "notified": null,
+                "last_stream": {
+                    "id": "315243725543",
+                    "user_id": "746895098",
+                    "user_login": "mattia_json",
+                    "user_name": "mattia_json",
+                    "game_id": "2132205352",
+                    "game_name": "Deadlock",
+                    "type": "live",
+                    "title": "Deadlock Meta Research | mattiadl on youtube",
+                    "viewer_count": 1,
+                    "started_at": "2025-11-24T12:07:39Z",
+                    "language": "en",
+                    "thumbnail_url": "https://static-cdn.jtvnw.net/previews-ttv/live_user_mattia_json-{width}x{height}.jpg",
+                    "tag_ids": [],
+                    "tags": [
+                        "English",
+                        "Coaching",
+                        "gameplayanalysis"
+                    ],
+                    "is_mature": false
+                }
+            }
+        },
+        "youtube": {
+            "UCtVOHRJNZhxagHj1csm5LqQ": {
+                "last_video": "Gi68PZJfh2I",
+                "latest_video_data": {
+                    "id": "Gi68PZJfh2I",
+                    "title": "Huge midboss - E6 Pocket",
+                    "thumb": "https://i.ytimg.com/vi/Gi68PZJfh2I/maxresdefault.jpg",
+                    "channelTitle": "Reuben",
+                    "channelId": "UCtVOHRJNZhxagHj1csm5LqQ",
+                    "url": "https://youtube.com/watch?v=Gi68PZJfh2I",
+                    "publishedAt": "2025-10-12T01:07:34Z",
+                    "description": "#deadlock",
+                    "uploads_playlist_id": "UUtVOHRJNZhxagHj1csm5LqQ"
+                }
+            },
+            "UCI4tSvq3ghswAI6x8Zdow0g": {
+                "last_video": "cXet3RcTOT4",
+                "latest_video_data": {
+                    "id": "cXet3RcTOT4",
+                    "title": "How to improve at Deadlock: Artificial Skill",
+                    "thumb": "https://i.ytimg.com/vi/cXet3RcTOT4/maxresdefault.jpg",
+                    "channelTitle": "Mattia",
+                    "channelId": "UCI4tSvq3ghswAI6x8Zdow0g",
+                    "url": "https://youtube.com/watch?v=cXet3RcTOT4",
+                    "publishedAt": "2025-11-22T15:49:40Z",
+                    "description": "After the last unedited video I was disappointed, so I wasted the rest of my time to make this.\n\nMusic by @bouncytorch (not sponsored)\nAll twitch/youtube references are in the video\n\nMy twitch: https://www.twitch.tv/mattia_json\n\n0:00 The best\n0:50 Artificial Skill\n3:20 Part by Part Imitation\n5:22 Mechanization by Iteration\n7:19 Fearless Learning\n8:12 Perfect Echo Chambers\n\n\n#coaching #deadlock #tips #learning #selfimprovement #shortessay \n\n\n\n\nHere is the transcript of, well, the script that I could fit into the description.\n\nDo you want to be the best?\nPerhaps just hit your peak and then look back at it for the rest of your life\nOr maybe you have someone to impress. Something to prove.\n\n\n\nToday, I'll teach you how to get there.\nToday, I'll teach you about Artificial Skill \nMattia \u2014 11/20/2025 1:54 PM\nFirst off, we have to address the elephants in the room: Talent and Hard work.\n\nSome people's previous experiences, or lack thereof make them more efficient at understanding where and how to put effort in whatever task they take on. Another part of talent resides in what makes one settle. Does he do too little and lacks care for the important parts of the skill, or does he perfectly understand when and where he should be good?\nWhen you're comparing yourself with someone who \"just gets it right\" you'll end up in an abyss of misunderstanding. Why do we play the same amount of games but he's just better than me? How do I fill this gap?\n\nSay hello to the other elephant: hard work.\nYou need to train harder!\nYou need to be there more than him!\nYou just need more time and work.\n\nOh you viewers have no idea how much I hate these statements. \nYou will not get better than anyone by mindlessly doing more of what you're doing. You'll just find out if you're statistically in the group of people who can understand how to fix his mistakes and, basically, is a part of those talented individuals.\n\nDrumrolls: It's time to talk about artificial skill.\nDEFINITION:\nArtificial Skill is a set of adjustments to a specific part of how you do something that you don't necessarily understand but makes you better than others at the same leve.\n\nArtificial skill is the promise of every coaching video about anything you ever watched. The promise of every tip and trick. The ability to out-talent and out-work peers at your same skill level with the acquisition of information.\n\nIf you're still not the best player at every game you've ever watched a coaching video for, you may either think that those coaching videos were either bad or that coaching just doesn't work.\n\n Here it is, the secret formula to acquire infinite artificial skill:\nMattia \u2014 11/20/2025 2:06 PM\nPart by part imitation. \nMechanization by iteration.\nFearless learning\nPerfect Echo Chambers\nMattia \u2014 Yesterday at 3:49 PM\nPart by part imitation\nHave you ever sketched out something starting from a reference? A monster from a videogame when you were a kid, or perhaps the face of someone you liked. \nIf someone hasn't told you already, let me be the first: The result of your imitation wasn't bad or good, it was a new piece of art. Your translation between what you saw, imagined, visualized, and what your hands did was a new unique image in the world. \nThe good thing about imitating something is that you can decide both what your reference is and how close you want to go to it. \nMattia \u2014 Yesterday at 3:57 PM\nMy personal approach to the subject is the following:\nIf you're clueless, copy everything.\nIf you think you're not clueless, copy every single detail about everything.\nIf you know what you want to learn, then look for that part.\n\nWhat I found out when I first started playing paradox and thought I had her figured out was that the more I watched Tas or MikaelS play the more I found small things I could do differently. The more I found out things could have been done differently, the more I started looking for one small change at a time.\n\nMy tip is to look for someone who is widely considered the current best at doing what you're looking to improve on, and find small things he does differently from you. It can be timings, how he manages his hp, how aggressive he is, when he becomes aggressive, when he pushes, when does he fight and when does he flee.\nHow does he move? Which cooldowns does he use?\n\nThe goal is to acquire the target's sense of importance and execution for your own gameplay, all while getting a visible goal for improvement.\nMattia \u2014 Yesterday at 4:11 PM\nWhile this first part is already enough for most people who are at or below the mean average of the skill level in a game to gain a noticeable improvement, the next ones are the de-facto necessity for speeding up the process.",
+                    "uploads_playlist_id": "UUI4tSvq3ghswAI6x8Zdow0g"
+                }
+            },
+            "UCmj7DMASaEAg8QqD5YU3w0A": {
+                "last_video": "sOnSJFYllpI",
+                "latest_video_data": {
+                    "id": "sOnSJFYllpI",
+                    "title": "Deadlock Solo Tournament | DeadChaps Semi Finals & Grand Finals (Full VOD)",
+                    "thumb": "https://i.ytimg.com/vi/sOnSJFYllpI/maxresdefault.jpg",
+                    "channelTitle": "RisinDarkKnight",
+                    "channelId": "UCmj7DMASaEAg8QqD5YU3w0A",
+                    "url": "https://youtube.com/watch?v=sOnSJFYllpI",
+                    "publishedAt": "2025-12-11T00:19:53Z",
+                    "description": "*DeadChaps presents the Deadlock Solo Tournament \u2014 where players sign up solo, get drafted into balanced 6v6 teams, and battle through a full competitive bracket. This VOD features the Semi Finals and the full Best-of-3 Grand Finals.*\n\nWatch top players clash in high-intensity Deadlock gameplay with strategy, coordination, and clutch moments throughout.\n\n*Tournament Format:*\n\u2022 Solo sign-up \u2192 balanced 6v6 team placement\n\u2022 Single Semi Finals match\n\u2022 Grand Finals (Best of 3 \u2014 all 3 games played)\n\u2022 Full broadcast VOD\n\n*Follow DeadChaps:*\nWebsite: https://www.deadchaps.com\nTwitch: https://www.twitch.tv/risindarkknight\nTwitter/X: https://x.com/DeadChaps_\n\n# *Timestamps*\n\n00:00:00 \u2013 Stream Start\n00:12:50 \u2013 Intro\n00:17:00 \u2013 Draft for Semi Finals\n00:33:15 \u2013 Semi Finals Match Start\n01:17:15 \u2013 Semi Finals Match Results\n\n01:31:10 \u2013 Draft for Finals (Game 1)\n01:44:50 \u2013 Grand Finals Game 1 Start\n\n02:31:10 \u2013 Draft for Finals (Game 2)\n02:43:35 \u2013 Grand Finals Game 2 Start\n03:12:05 \u2013 End of Game 2 Results\n\n03:17:45 \u2013 Draft for Finals (Game 3)\n03:29:40 \u2013 Grand Finals Game 3 Start\n\n04:07:08 \u2013 Outro\n\n# *Credits*\n*Overlays & Logo:*\n\u2022 masmadman\n\n*Casting Team:*\n\u2022 Mattia \u2014 https://www.youtube.com/@mattiadl\n\u2022 Kryddm\u00e5tt (DeadChaps Community)\n\u2022 Jiggle (DeadChaps Community)",
+                    "uploads_playlist_id": "UUmj7DMASaEAg8QqD5YU3w0A"
+                }
+            }
+        },
+        "autovc": {
+            "1432111309607932095": {
+                "owner": 668811100057501719,
+                "created_at": "2025-10-26 20:59:04.139667+00:00"
+            },
+            "1438287948935073905": {
+                "owner": 668811100057501719,
+                "created_at": "2025-11-12 22:02:49.857016+00:00"
+            }
+        }
+    },
+    "1284214575591592099": {
+        "twitch": {
+            "baxle_b": {
+                "notified": null,
+                "last_stream": {
+                    "id": "314983989585",
+                    "user_id": "501843515",
+                    "user_login": "baxle_b",
+                    "user_name": "baxle_b",
+                    "game_id": "2132205352",
+                    "game_name": "Deadlock",
+                    "type": "live",
+                    "title": "I'm no longer a one trick #FOR THE DJINN | time to overcum | Top 400 EU | small mouse enjoyer | !commands !mouse !disc !lurk !ytube",
+                    "viewer_count": 4,
+                    "started_at": "2025-12-15T14:36:06Z",
+                    "language": "en",
+                    "thumbnail_url": "https://static-cdn.jtvnw.net/previews-ttv/live_user_baxle_b-{width}x{height}.jpg",
+                    "tag_ids": [],
+                    "tags": [
+                        "English",
+                        "LGBT",
+                        "Autistic",
+                        "DropsEnanbled",
+                        "SafeSpace",
+                        "chill",
+                        "AMA",
+                        "BackseatingaIIowed",
+                        "deadlock"
+                    ],
+                    "is_mature": false
+                }
+            }
+        },
+        "youtube": {
+            "UCBO_QEKYadaCNee3-VbXbCA": {
+                "last_video": "ChXwxnGpj3g",
+                "latest_video_data": {
+                    "id": "ChXwxnGpj3g",
+                    "title": "over 10 ways to improve your positioning | deadlock guide",
+                    "thumb": "https://i.ytimg.com/vi/ChXwxnGpj3g/maxresdefault.jpg",
+                    "channelTitle": "baxle_b",
+                    "channelId": "UCBO_QEKYadaCNee3-VbXbCA",
+                    "url": "https://youtube.com/watch?v=ChXwxnGpj3g",
+                    "publishedAt": "2025-12-10T19:00:13Z",
+                    "description": "hey, i play deadlock a lot and I'm fairly high elo. I really like the game and talking about improvement etc. i stream most days.\nfeel free to join the discord to find people to play with or to ask questions  (we have a lovely community). gl hf\n\n00:00 intro \n00:36 shooter basics \n04:47 key ideas of positioning \n05:40 how roles apply \n07:13 positioning principals \n07:17 low likelihood of dying \n07:38 fulfill your role\n08:21 avoiding damage\n08:51 playing cover\n09:07 deny enemy strengths\n09:55 positioning with escapes\n10:27 playing around your team\n11:18 outro\n\ntwitch: twitch.tv/baxle_b\n\ndiscord: https://discord.gg/f8HGpf5gwS\n\nlinktree: linktr.ee/baxle_b\n\nartwork: http://www.deviantart.com/masmadman (https://aurigrave.org/ - bouncytourch posed the deadlock models for the thumbnail)\n\n#deadlock #twitch #fps #moba #shooter #deadlockgameplay #coaching #deadlockvalve #valve  #deadlockguide",
+                    "uploads_playlist_id": "UUBO_QEKYadaCNee3-VbXbCA"
+                }
+            }
+        },
+        "autovc": {}
+    },
+    "1416616789311492098": {
+        "twitch": {
+            "risindarkknight": {
+                "notified": null,
+                "last_stream": {
+                    "id": "315355676900",
+                    "user_id": "63173069",
+                    "user_login": "risindarkknight",
+                    "user_name": "RisinDarkKnight",
+                    "game_id": "2132205352",
+                    "game_name": "Deadlock",
+                    "type": "live",
+                    "title": "DeadChaps Tournament FINALS NOW BO3 fargareko fc VS Team 1",
+                    "viewer_count": 23,
+                    "started_at": "2025-12-07T17:52:13Z",
+                    "language": "en",
+                    "thumbnail_url": "https://static-cdn.jtvnw.net/previews-ttv/live_user_risindarkknight-{width}x{height}.jpg",
+                    "tag_ids": [],
+                    "tags": [
+                        "Ranked",
+                        "English",
+                        "Shooter",
+                        "MOBA",
+                        "Comptetitive",
+                        "ADHD"
+                    ],
+                    "is_mature": false
+                }
+            }
+        },
+        "youtube": {
+            "UCmj7DMASaEAg8QqD5YU3w0A": {
+                "last_video": "sOnSJFYllpI",
+                "latest_video_data": {
+                    "id": "sOnSJFYllpI",
+                    "title": "Deadlock Solo Tournament | DeadChaps Semi Finals & Grand Finals (Full VOD)",
+                    "thumb": "https://i.ytimg.com/vi/sOnSJFYllpI/maxresdefault.jpg",
+                    "channelTitle": "RisinDarkKnight",
+                    "channelId": "UCmj7DMASaEAg8QqD5YU3w0A",
+                    "url": "https://youtube.com/watch?v=sOnSJFYllpI",
+                    "publishedAt": "2025-12-11T00:19:53Z",
+                    "description": "*DeadChaps presents the Deadlock Solo Tournament \u2014 where players sign up solo, get drafted into balanced 6v6 teams, and battle through a full competitive bracket. This VOD features the Semi Finals and the full Best-of-3 Grand Finals.*\n\nWatch top players clash in high-intensity Deadlock gameplay with strategy, coordination, and clutch moments throughout.\n\n*Tournament Format:*\n\u2022 Solo sign-up \u2192 balanced 6v6 team placement\n\u2022 Single Semi Finals match\n\u2022 Grand Finals (Best of 3 \u2014 all 3 games played)\n\u2022 Full broadcast VOD\n\n*Follow DeadChaps:*\nWebsite: https://www.deadchaps.com\nTwitch: https://www.twitch.tv/risindarkknight\nTwitter/X: https://x.com/DeadChaps_\n\n# *Timestamps*\n\n00:00:00 \u2013 Stream Start\n00:12:50 \u2013 Intro\n00:17:00 \u2013 Draft for Semi Finals\n00:33:15 \u2013 Semi Finals Match Start\n01:17:15 \u2013 Semi Finals Match Results\n\n01:31:10 \u2013 Draft for Finals (Game 1)\n01:44:50 \u2013 Grand Finals Game 1 Start\n\n02:31:10 \u2013 Draft for Finals (Game 2)\n02:43:35 \u2013 Grand Finals Game 2 Start\n03:12:05 \u2013 End of Game 2 Results\n\n03:17:45 \u2013 Draft for Finals (Game 3)\n03:29:40 \u2013 Grand Finals Game 3 Start\n\n04:07:08 \u2013 Outro\n\n# *Credits*\n*Overlays & Logo:*\n\u2022 masmadman\n\n*Casting Team:*\n\u2022 Mattia \u2014 https://www.youtube.com/@mattiadl\n\u2022 Kryddm\u00e5tt (DeadChaps Community)\n\u2022 Jiggle (DeadChaps Community)",
+                    "uploads_playlist_id": "UUmj7DMASaEAg8QqD5YU3w0A"
+                }
+            }
+        },
+        "autovc": {}
+    }
 }

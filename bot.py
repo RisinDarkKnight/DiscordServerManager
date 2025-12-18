@@ -76,13 +76,6 @@ class AutoVCBot(commands.Bot):
         logging.info(f"🔑 Bot ID: {self.user.id}")
         logging.info(f"🏠 Guilds: {len(self.guilds)}")
         logging.info("="*50)
-        
-        # Set activity
-        activity = discord.Activity(
-            type=discord.ActivityType.watching,
-            name=f"{len(self.guilds)} servers | Use /help"
-        )
-        await self.change_presence(activity=activity)
     
     async def on_command_error(self, ctx, error):
         """Enhanced error handling"""
